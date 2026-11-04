@@ -1,0 +1,56 @@
+name: Verify Android launch
+on:
+  workflow_run:
+    workflows: ['Build Android APK']
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  launch:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download tested APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          GH_REPO: ${{ github.repository }}
+        run: gh run download "$RUN_ID" --name bogo-again-android-apk --dir apk
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb install apk/*.apk
+            adb logcat -c
+            adb shell am start -W -n com.hojung1231.bogoagain/.MainActivity
+            sleep 12
+            adb shell pidof com.hojung1231.bogoagain
+            adb logcat -d > android-launch.log
+            if grep -E 'FATAL EXCEPTION|ReactNativeJS.*(Error:|Invariant Violation)' android-launch.log; then exit 1; fi
+            adb shell uiautomator dump /sdcard/window.xml
+            adb pull /sdcard/window.xml window.xml
+            adb exec-out screencap -p > android-home.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-launch-verification
+          path: |
+            android-launch.log
+            android-home.png
+            window.xml
