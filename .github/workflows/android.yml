@@ -1,0 +1,58 @@
+name: Build Android APK
+on:
+  push:
+    branches: [main]
+    paths: ['native/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
+        env:
+          CI: '1'
+      - name: Build standalone APK
+        working-directory: native/android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon --max-workers=2
+        env:
+          NODE_ENV: production
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g
+      - name: Prepare APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk ../보고또보고-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bogo-again-android-apk
+          path: 보고또보고-Android.apk
+          retention-days: 30
+      - name: Publish install file
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-preview >/dev/null 2>&1 || gh release create android-preview --title '보고또보고 Android 설치 앱' --notes '갤럭시용 미리보기 APK입니다. 실제 기기 촬영 및 녹음 확인이 필요합니다. 사내 Qwen 주소는 앱 설정에서 입력하세요.' --prerelease
+          gh release upload android-preview '보고또보고-Android.apk' --clobber
