@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {THUMB_WIDTH,THUMB_STEP,hitShape,translateShape,renumber,resizeFromTouches} from '../src/geometry.ts';
+import {THUMB_WIDTH,THUMB_STEP,hitShape,translateShape,renumber,resizeFromTouches,centeredCrop} from '../src/geometry.ts';
 import type {TwoPointState} from '../src/geometry.ts';
 import type {Annotation} from '../src/model.ts';
 const box:Annotation={id:'1',number:1,kind:'rectangle',color:'#ed4d4d',x1:.2,y1:.2,x2:.5,y2:.6};
@@ -34,4 +34,13 @@ test('화살표는 첫 터치가 축의 시작점이며 터치 배열 순서에 
  const state:TwoPointState={ids:null,firstId:9,finished:false};
  const arrow=resizeFromTouches({...box,kind:'arrow'},[{id:3,x:.8,y:.2},{id:9,x:.2,y:.8}],state);
  assert.deepEqual([arrow.x1,arrow.y1,arrow.x2,arrow.y2],[.2,.8,.8,.2]);
+});
+
+test('세로 촬영은 원본에서 실제 가로3 세로4 픽셀로 자름',()=>{
+ const crop=centeredCrop(4096,3072,3/4);
+ assert.deepEqual(crop,{originX:896,originY:0,width:2304,height:3072});
+});
+test('가로 촬영은 원본에서 실제 가로4 세로3 픽셀로 자름',()=>{
+ const crop=centeredCrop(3072,4096,4/3);
+ assert.deepEqual(crop,{originX:0,originY:896,width:3072,height:2304});
 });
