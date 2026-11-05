@@ -1,4 +1,5 @@
 name: Publish existing Android APK
+# Reuses the completed native build; no recompilation is needed.
 on:
   push:
     branches: [main]
