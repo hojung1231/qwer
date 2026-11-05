@@ -5,6 +5,9 @@ exec(source.split('\ntry:\n',1)[0])
 try:
     if contains("Pixel Launcher isn't responding"):
         tap('Close app');adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity');time.sleep(3)
+    adb('shell','am','start','-W','-n','com.bogo.touch/.ShareReceiver','-a','android.intent.action.SEND','-t','text/plain','--es','android.intent.extra.TEXT','test-initialization')
+    time.sleep(1);adb('shell','run-as','com.bogo.touch','rm','-f','files/share-result.json')
+    adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity');time.sleep(2)
     assert contains('새 작업 시작')
     make_fixture()
     path=pathlib.Path('bogo-highres.bogo.json');data=json.loads(path.read_text());data['project']['items'][0]['originalBase64']=data['project']['items'][0]['mediaBase64'];path.write_text(json.dumps(data));adb('push',str(path),'/sdcard/Download/bogo-highres.bogo.json')
@@ -12,7 +15,8 @@ try:
     if find('bogo-highres.bogo.json') is None:tap('Show roots');tap('Downloads')
     tap('bogo-highres.bogo.json');time.sleep(2);tap('OK');tap('HighRes Fixture')
     # App link and invitations use a test-only local share receiver, never real contacts.
-    tap('앱 다운로드 링크 공유');tap('Bogo share verifier')
+    adb('shell','run-as','com.bogo.touch','rm','-f','files/share-result.json')
+    tap('앱 다운로드 링크 공유');time.sleep(2);screenshot('android-share.png');tap('Bogo share verifier')
     app_share=read_share_payload()
     assert app_share['mime']=='text/plain' and 'releases/download/android-preview/bogo-again-android.apk' in app_share['text']
     verified.append('header-app-download-link-shares-through-Android-chooser')
@@ -22,7 +26,8 @@ try:
     tap('팀원 추가');tap('추가할 팀원 이름');adb('shell','input','text','BogoPeer')
     tap('추가할 팀원 전화번호');adb('shell','input','text','01000000002');adb('shell','input','keyevent','4')
     tap('팀원 등록 저장');assert contains('BogoPeer') and contains('01000000002')
-    tap('카카오톡으로 초대');tap('Bogo share verifier')
+    adb('shell','run-as','com.bogo.touch','rm','-f','files/share-result.json')
+    tap('카카오톡으로 초대');time.sleep(2);screenshot('android-share.png');tap('Bogo share verifier')
     invite_share=read_share_payload()
     invite=re.search(r'join\.html#([a-f0-9]{64})',invite_share['text']).group(1)
     fixture=subprocess.Popen(['node','scripts/team-ui-fixture.cjs'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
@@ -87,6 +92,7 @@ try:
     verified.append('team-identity-inbox-and-read-state-persist-after-restart')
     assert not diagnostic_old_build,'Diagnostic build 9 still requires cancel-recovery fix in build 10'
 finally:
+    with pathlib.Path('android-launch.log').open('a',encoding='utf-8') as log:log.write(adb('logcat','-d','-s','AndroidRuntime:E'))
     pathlib.Path('android-ui-verification.json').write_text(json.dumps({'buildCode':build_code,'knownIssueSkipped':['cancel-recovery'] if diagnostic_old_build else [],'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
     pathlib.Path('window.xml').write_text(ET.tostring(tree(),encoding='unicode'),encoding='utf-8')
     screenshot('android-final.png')
