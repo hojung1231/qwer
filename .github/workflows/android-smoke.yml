@@ -62,6 +62,8 @@ jobs:
             android-capture.png
             android-report.png
             android-editor.png
+            android-folder.png
+            folder-output/
             android-final.png
             android-ui-verification.json
             window.xml
