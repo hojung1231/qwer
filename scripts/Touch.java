@@ -40,9 +40,12 @@ public class Touch extends Instrumentation {
     return null;
   }
   Rect titleBounds()throws Exception{
-    AccessibilityNodeInfo node=labelled(getUiAutomation().getRootInActiveWindow(),"작업 제목");
-    if(node==null)throw new Exception("Work title disappeared during strip drag");
-    Rect bounds=new Rect();node.getBoundsInScreen(bounds);return bounds;
+    for(int retry=0;retry<20;retry++){
+      AccessibilityNodeInfo node=labelled(getUiAutomation().getRootInActiveWindow(),"작업 제목");
+      if(node!=null){Rect bounds=new Rect();node.getBoundsInScreen(bounds);return bounds;}
+      Thread.sleep(100);
+    }
+    throw new Exception("Work title disappeared during strip drag");
   }
   void selected(int number)throws Exception{
     AccessibilityNodeInfo node=labelled(getUiAutomation().getRootInActiveWindow(),"현장 기록 "+number+" 선택");

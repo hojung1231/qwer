@@ -15,7 +15,8 @@ def find(label):
     root=tree()
     for attribute in ('content-desc','text'):
         for node in root.iter('node'):
-            if node.attrib.get(attribute,'').casefold()==label.casefold():
+            value=node.attrib.get(attribute,'').casefold()
+            if value==label.casefold() or label.startswith('프로젝트 선택, ') and value.startswith(label.casefold()+','):
                 x1,y1,x2,y2=bounds(node)
                 if x2>x1 and y2>y1:return node
     return None
