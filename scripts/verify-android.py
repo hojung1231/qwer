@@ -21,10 +21,12 @@ def find(label):
     return None
 
 def tap(label):
-    for _ in range(6):
+    for attempt in range(8):
         node=find(label)
         if node is not None:
             x1,y1,x2,y2=bounds(node);adb('shell','input','tap',(x1+x2)//2,(y1+y2)//2);time.sleep(1);return
+        if attempt==0:top()
+        else:adb('shell','input','swipe',540,1850,540,850,450)
         time.sleep(.5)
     raise AssertionError('Missing UI: '+label)
 
@@ -33,6 +35,10 @@ def screenshot(name):
 
 def contains(text):
     return any(text in (n.attrib.get('text','')+' '+n.attrib.get('content-desc','')) for n in tree().iter('node'))
+
+def top():
+    for _ in range(2):adb('shell','input','swipe',540,650,540,1950,350)
+    time.sleep(.5)
 
 verified=[]
 try:
@@ -44,10 +50,10 @@ try:
     tap('촬영 비율 회전');assert contains('3:4')
     tap('촬영 비율 회전');assert contains('4:3')
     assert not contains('이어서 촬영')
-    screenshot('android-capture.png');verified.append('capture-4x3-rotation')
-    tap('사진 촬영');time.sleep(4)
+    top();screenshot('android-capture.png');verified.append('capture-4x3-rotation')
+    tap('사진 촬영');time.sleep(4);top()
     assert contains('현장 기록 1 선택')
-    tap('사진 촬영');time.sleep(3)
+    tap('사진 촬영');time.sleep(3);top()
     assert contains('현장 기록 2 선택')
     first,second=bounds(find('현장 기록 1 선택')),bounds(find('현장 기록 2 선택'))
     overlap=(first[2]-second[0])/(first[2]-first[0])
@@ -60,7 +66,6 @@ try:
     time.sleep(1);assert contains('개체 1')
     tap('노란색 윤곽선');screenshot('android-editor.png')
     tap('편집 사진 저장');time.sleep(4)
-    assert contains('사진 편집 열기')
     tap('사진 편집 열기');time.sleep(3)
     assert contains('개체 1')
     tap('사진 편집 닫기');time.sleep(3)
