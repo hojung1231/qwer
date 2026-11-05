@@ -1,9 +1,38 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {THUMB_WIDTH,THUMB_STEP,hitShape,translateShape,renumber,resizeFromTouches,centeredCrop} from '../src/geometry.ts';
+import {THUMB_WIDTH,THUMB_STEP,hitShape,translateShape,renumber,resizeFromTouches,pinchFromTouches,movedPastHold,centeredCrop} from '../src/geometry.ts';
 import type {TwoPointState} from '../src/geometry.ts';
 import type {Annotation} from '../src/model.ts';
 const box:Annotation={id:'1',number:1,kind:'rectangle',color:'#ed4d4d',x1:.2,y1:.2,x2:.5,y2:.6};
+
+for(const kind of ['circle','rectangle','arrow'] as const){
+ test(`${kind}: 바깥 두 점을 대도 위치와 크기는 유지되고 간격 비율로 확대 축소`,()=>{
+  const shape={...box,kind},state:TwoPointState={ids:null,finished:false};
+  assert.deepEqual(pinchFromTouches(shape,[{id:1,x:0,y:.4},{id:2,x:1,y:.4}],state,800,600),shape);
+  const smaller=pinchFromTouches(shape,[{id:2,x:.9,y:.4},{id:1,x:.1,y:.4}],state,800,600);
+  assert.ok(Math.abs((smaller.x2-smaller.x1)/.3-.8)<1e-9);
+  assert.ok(Math.abs((smaller.y2-smaller.y1)/.4-.8)<1e-9);
+  assert.ok(Math.abs((smaller.x1+smaller.x2)/2-.35)<1e-9);
+  assert.deepEqual(pinchFromTouches(smaller,[{id:1,x:.2,y:.4}],state,800,600),smaller);
+ });
+}
+test('같은 이동 거리라도 넓게 잡으면 작은 비율로 변환',()=>{
+ const pinch=(grip:number)=>{const state:TwoPointState={ids:null,finished:false};pinchFromTouches(box,[{id:1,x:.5-grip/2,y:.4},{id:2,x:.5+grip/2,y:.4}],state,800,600);return pinchFromTouches(box,[{id:1,x:.5-grip/2+.05,y:.4},{id:2,x:.5+grip/2-.05,y:.4}],state,800,600);};
+ const wide=pinch(.8),narrow=pinch(.4);
+ assert.ok(Math.abs((wide.x2-wide.x1)/.3-.875)<1e-9);
+ assert.ok(Math.abs((narrow.x2-narrow.x1)/.3-.75)<1e-9);
+});
+test('핀치 확대와 두 손가락 이동은 최초 개체를 기준으로 계산',()=>{
+ const state:TwoPointState={ids:null,finished:false};pinchFromTouches(box,[{id:1,x:.3,y:.3},{id:2,x:.5,y:.3}],state,800,600);
+ const bigger=pinchFromTouches(box,[{id:1,x:.2,y:.3},{id:2,x:.6,y:.3}],state,800,600);
+ assert.ok(Math.abs((bigger.x2-bigger.x1)-.6)<1e-9);
+ const moved=pinchFromTouches(bigger,[{id:1,x:.4,y:.4},{id:2,x:.6,y:.4}],state,800,600);
+ assert.ok(Math.abs(moved.x1-.3)<1e-9);assert.ok(Math.abs(moved.y1-.3)<1e-9);
+});
+test('휴지통 길게 누르기 판정은 미세 떨림을 허용하고 이동 시 취소',()=>{
+ assert.equal(movedPastHold({x:.3,y:.3},{x:.303,y:.303},800,600),false);
+ assert.equal(movedPastHold({x:.3,y:.3},{x:.32,y:.3},800,600),true);
+});
 test('썸네일 노출 간격은 너비의 70%',()=>assert.equal(THUMB_STEP/THUMB_WIDTH,.7));
 test('겹친 개체는 나중에 추가된 것이 선택됨',()=>assert.equal(hitShape([box,{...box,id:'2'}],.3,.3,800,600)?.id,'2'));
 test('이동 시 이미지 경계를 넘지 않고 크기 유지',()=>{const moved=translateShape(box,2,-2);assert.equal(moved.x2,1);assert.equal(moved.y1,0);assert.ok(Math.abs((moved.x2-moved.x1)-.3)<.00001);});
