@@ -13,6 +13,7 @@ cat > touch-test/AndroidManifest.xml <<'XML'
         <action android:name="android.intent.action.SEND"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <data android:mimeType="image/jpeg"/>
+        <data android:mimeType="text/plain"/>
       </intent-filter>
     </activity>
   </application>

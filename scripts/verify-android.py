@@ -1,5 +1,5 @@
 """Android emulator UI verification against the freshly built APK."""
-import base64,hashlib,io,json,pathlib,re,struct,subprocess,time,wave,zlib,xml.etree.ElementTree as ET
+import base64,hashlib,io,json,pathlib,re,struct,subprocess,time,wave,select,zlib,xml.etree.ElementTree as ET
 
 def adb(*args):
     return subprocess.check_output(['adb', *map(str,args)]).decode('utf-8', errors='replace')
@@ -16,7 +16,7 @@ def find(label):
     for attribute in ('content-desc','text'):
         for node in root.iter('node'):
             value=node.attrib.get(attribute,'').casefold()
-            if value==label.casefold() or label.startswith('프로젝트 선택, ') and value.startswith(label.casefold()+','):
+            if value==label.casefold() or label.startswith('프로젝트 선택, ') and value.startswith(label.casefold()+',') or label=='수신 모드' and value.startswith('수신 모드'):
                 x1,y1,x2,y2=bounds(node)
                 if x2>x1 and y2>y1:return node
     return None
@@ -162,18 +162,18 @@ try:
     assert contains('개체 1')
     tap('사진 편집 닫기');time.sleep(3)
     verified.append('landscape-annotation-save-and-reopen')
-    # A text-only field record verifies native navigation and persistent report generation.
-    node=find('현장 메모')
-    if node is None:
-        adb('shell','input','swipe',540,1800,540,900,450);time.sleep(1)
-    tap('현장 메모')
+    # The only memo input now lives directly below the photo preview.
+    top();tap('사진 메모 텍스트')
     adb('shell','input','text','Inspection%ssample%stwo%sscratches')
     adb('shell','input','keyevent','4');time.sleep(1)
-    adb('shell','input','swipe',540,650,540,1800,450);time.sleep(1)
-    tap('보고서 모드');tap('보고서 작성')
     assert contains('Inspection sample two scratches')
-    assert contains('현장 확인 내용')
-    screenshot('android-report.png');verified.append('native-report-generation')
+    assert find('현장 메모') is None and not contains('보고서 모드')
+    tap('메모 텍스트 초기화');assert find('사진 메모 텍스트').attrib.get('text','')==''
+    tap('되돌리기');assert contains('Inspection sample two scratches')
+    tap('AI');tap('취소');assert contains('Inspection sample two scratches')
+    tap('AI');tap('정리');assert contains('개인 OpenAI API 키');tap('OK')
+    assert contains('Inspection sample two scratches')
+    verified.append('inline-editable-transcript-clear-undo-and-opt-in-AI-keeps-original-without-key')
     tap('홈')
     assert contains('내 라이브러리 1')
     verified.append('saved-project-library')
@@ -261,6 +261,73 @@ try:
     adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity');time.sleep(4)
     tap('새 외근 기록');assert find('프로젝트 선택, Project2') is not None
     verified.append('project-folder-selection-and-created-folders-persist-after-restart')
+    # App link and invitations use a test-only local share receiver, never real contacts.
+    tap('앱 다운로드 링크 공유');tap('Bogo share verifier')
+    app_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    assert app_share['mime']=='text/plain' and 'releases/download/android-preview/bogo-again-android.apk' in app_share['text']
+    verified.append('header-app-download-link-shares-through-Android-chooser')
+    tap('팀원 등록');tap('내 이름');adb('shell','input','text','BogoAppTest')
+    tap('내 전화번호');adb('shell','input','text','01000000001');adb('shell','input','keyevent','4')
+    tap('내 정보 저장');time.sleep(3)
+    tap('팀원 추가');tap('추가할 팀원 이름');adb('shell','input','text','BogoPeer')
+    tap('추가할 팀원 전화번호');adb('shell','input','text','01000000002');adb('shell','input','keyevent','4')
+    tap('팀원 등록 저장');assert contains('BogoPeer') and contains('01000000002')
+    tap('카카오톡으로 초대');tap('Bogo share verifier')
+    invite_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    invite=re.search(r'join\.html#([a-f0-9]{64})',invite_share['text']).group(1)
+    fixture=subprocess.Popen(['node','scripts/team-ui-fixture.cjs'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
+    def rpc(action,**values):
+        fixture.stdin.write(json.dumps({'action':action,**values})+'\n');fixture.stdin.flush()
+        deadline=time.time()+90
+        while time.time()<deadline:
+            ready,_,_=select.select([fixture.stdout],[],[],1)
+            if not ready:continue
+            line=fixture.stdout.readline()
+            if line.startswith('RPC '):
+                result=json.loads(line[4:]);assert result['ok'],result.get('error');return result['result']
+        raise AssertionError('Fake-peer RPC timed out: '+action)
+    connected=rpc('connect',token=invite)
+    tap('새로고침')
+    for _ in range(20):
+        if contains('● 연결됨'):break
+        time.sleep(1)
+    assert contains('● 연결됨');tap('닫기')
+    adb('shell','am','start','-W','-a','android.intent.action.VIEW','-d','bogo-again://invite?token='+connected['secondInvite'],'com.hojung1231.bogoagain');time.sleep(3)
+    assert contains('받은 초대로 연결');tap('초대한 팀원과 연결');time.sleep(3);tap('OK')
+    assert contains('BogoPeerTwo');screenshot('android-team.png');tap('닫기')
+    verified.append('team-table-manual-name-phone-and-single-use-invitation-connect-fake-peer')
+    tap('홈');tap('HighRes Fixture');tap('세트 공유');tap('수신자 BogoPeer');tap('수신자 BogoPeerTwo');tap('선택한 2명에게 보내기')
+    for _ in range(30):
+        if contains('세트 전송 완료'):break
+        time.sleep(1)
+    assert contains('세트 전송 완료');tap('OK');sent=rpc('inspect');assert sent['files']>=3
+    verified.append('full-set-share-to-two-selected-team-members-includes-edited-photo-original-and-audio')
+    rpc('incoming')
+    for _ in range(30):
+        if contains('수신 모드, 새 자료 2개'):break
+        time.sleep(1)
+    assert contains('수신 모드, 새 자료 2개')
+    tap('수신 모드')
+    newest='받은 세트 최신수신프로젝트, BogoPeer, 사진 1장, 새 자료'
+    older='받은 세트 이전수신프로젝트, BogoPeer, 사진 1장, 새 자료'
+    assert bounds(find(newest))[1]<bounds(find(older))[1]
+    assert contains('최신수신프로젝트');screenshot('android-inbox.png')
+    verified.append('incoming-badge-count-newest-first-list-and-five-character-project-label')
+    tap(newest)
+    for _ in range(20):
+        if contains('받은 세트 · 읽기 전용'):break
+        time.sleep(1)
+    assert contains('받은 세트 · 읽기 전용') and contains('수신 메모')
+    assert find('사진 메모 텍스트') is None and find('사진 촬영') is None
+    assert find('메모 텍스트 초기화') is None and find('AI') is None and find('재촬영') is None
+    assert not any(n.attrib.get('class')=='android.widget.EditText' for n in tree().iter('node'))
+    screenshot('android-received-reader.png');tap('수신함으로 돌아가기')
+    assert contains('수신 모드, 새 자료 1개');rpc('receipts');fixture.terminate();fixture.wait(timeout=5)
+    verified.append('received-capture-layout-is-read-only-and-opening-one-set-decrements-unread-count')
+    adb('shell','am','force-stop','com.hojung1231.bogoagain')
+    adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity');time.sleep(4)
+    tap('수신함 · 새 자료 1개');assert contains('최신수신프로젝트') and contains('수신 모드, 새 자료 1개')
+    verified.append('team-identity-inbox-and-read-state-persist-after-restart')
     assert not diagnostic_old_build,'Diagnostic build 9 still requires cancel-recovery fix in build 10'
 finally:
     pathlib.Path('android-ui-verification.json').write_text(json.dumps({'buildCode':build_code,'knownIssueSkipped':['cancel-recovery'] if diagnostic_old_build else [],'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
