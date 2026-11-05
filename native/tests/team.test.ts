@@ -1,0 +1,14 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {inviteToken,inviteUrl,displayProject,dateTint,mergeIncoming,mergeTeam} from '../src/teamCore.ts';
+import {memoRecords,parseAIRecords} from '../src/organizeCore.ts';
+import type {IncomingSet} from '../src/model.ts';
+const token='a'.repeat(64);
+test('카카오톡 링크와 앱 링크, 붙여넣은 초대 코드가 같은 연결 코드로 해석됨',()=>{assert.equal(inviteToken(inviteUrl(token)),token);assert.equal(inviteToken(`bogo-again://invite?token=${token}`),token);assert.equal(inviteToken(token),token);assert.throws(()=>inviteToken('not-an-invite'));});
+test('프로젝트명은 유니코드 글자 단위로 다섯 글자까지만 표시',()=>{assert.equal(displayProject('가나다라마바사'),'가나다라마…');assert.equal(displayProject('현장1'),'현장1');assert.equal(displayProject('😀😁😂😃😄😅'),'😀😁😂😃😄…');});
+test('날짜별 색은 같은 날짜에 일정하고 다음 날짜는 다름',()=>{assert.deepEqual(dateTint('2026-11-05T10:00:00Z'),dateTint('2026-11-05T10:01:00Z'));assert.notDeepEqual(dateTint('2026-11-05T10:00:00Z'),dateTint('2026-11-06T10:00:00Z'));});
+const row:IncomingSet={id:'d',setId:'s',senderId:'u',senderName:'가상 송신자',projectName:'가상 프로젝트',photoCount:2,itemCount:2,createdAt:'2026-11-05T01:00:00Z'};
+test('새로고침 시 로컬 읽음 상태와 받은 사진 캐시 유지 및 최신순 정렬',()=>{const local={...row,readAt:'2026-11-05T03:00:00Z',project:{id:'s',title:'cached',items:[],createdAt:'',updatedAt:'',report:'',feedback:''}};const merged=mergeIncoming([local],[{...row},{...row,id:'new',createdAt:'2026-11-06T01:00:00Z'}]);assert.equal(merged[0].id,'new');assert.equal(merged[1].readAt,local.readAt);assert.equal(merged[1].project?.title,'cached');});
+test('수락된 초대는 기존 팀원 행에 연결되고 사용자가 입력한 이름과 번호 유지',()=>{const local=[{id:'local',name:'내가 부르는 이름',phone:'010-0000-0000',inviteToken:token}];const merged=mergeTeam(local,[{id:'remote',name:'연결된 이름',phone:'other'}],[{token,claimed_by:'remote'}]);assert.equal(merged.length,1);assert.equal(merged[0].remoteId,'remote');assert.equal(merged[0].name,local[0].name);assert.equal(merged[0].phone,local[0].phone);assert.equal(local[0].inviteToken,token);});
+test('AI 입력은 메모 텍스트와 기록 ID만 포함하고 미디어 경로는 제외',()=>{const input={id:'1',memo:'현장 메모',uri:'private-photo',audioUri:'private-audio'};assert.deepEqual(memoRecords([input,{id:'2',memo:'  '}]),[{id:'1',text:'현장 메모'}]);assert.equal(input.memo,'현장 메모');});
+test('AI 결과에서 누락·중복·외부 기록 ID 또는 빈 텍스트면 전부 반영 거절',()=>{for(const records of [[{id:'1',text:'ok'}],[{id:'1',text:'ok'},{id:'1',text:'duplicate'}],[{id:'1',text:'ok'},{id:'3',text:'wrong'}],[{id:'1',text:'ok'},{id:'2',text:''}]])assert.throws(()=>parseAIRecords(JSON.stringify({records}),['1','2']));assert.deepEqual(parseAIRecords(JSON.stringify({records:[{id:'2',text:' 정리 2 '},{id:'1',text:'정리 1'}]}),['1','2']),[{id:'2',text:'정리 2'},{id:'1',text:'정리 1'}]);});

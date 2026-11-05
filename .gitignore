@@ -4,3 +4,8 @@ node_modules/
 *.log
 *.bogo.json
 !.env.example
+
+.local/
+*-verification.json
+ui-verification*/
+verification*.zip

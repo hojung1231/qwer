@@ -37,7 +37,7 @@ jobs:
       - name: Lint and gesture tests
         run: |
           npx expo lint
-          node --experimental-strip-types --test tests/geometry.test.ts
+          node --experimental-strip-types --test tests/*.test.ts
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
         env:
