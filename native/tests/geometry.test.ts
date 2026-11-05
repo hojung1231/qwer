@@ -101,3 +101,14 @@ test('손가락이 영역 경계를 넘어도 시작 시 결정한 세로 축 �
  assert.ok(Math.abs((changed.x2-changed.x1)-.3)<1e-9);assert.equal(state.baseline?.axis,'vertical');
  assert.deepEqual(pinchFromTouches(changed,[{id:1,x:.4,y:.5}],state,800,600),changed);
 });
+
+test('수평/수직 화살표도 길이가 0인 축으로 펼칠 수 있고 시작 시 튀지 않음',()=>{
+ const arrow:Annotation={...box,kind:'arrow',y1:.4,y2:.4},state:TwoPointState={ids:null,finished:false};
+ assert.deepEqual(pinchFromTouches(arrow,[{id:1,x:.35,y:.2},{id:2,x:.35,y:.6}],state,800,600),arrow);
+ const expanded=pinchFromTouches(arrow,[{id:1,x:.35,y:.1},{id:2,x:.35,y:.7}],state,800,600);
+ assert.ok(Math.abs((expanded.x2-expanded.x1)-.3)<1e-9);assert.ok(Math.abs((expanded.y2-expanded.y1)-.2)<1e-9);
+ const vertical:Annotation={...box,kind:'arrow',x1:.4,x2:.4},other:TwoPointState={ids:null,finished:false};
+ assert.deepEqual(pinchFromTouches(vertical,[{id:1,x:.2,y:.4},{id:2,x:.6,y:.4}],other,800,600),vertical);
+ const wider=pinchFromTouches(vertical,[{id:1,x:.1,y:.4},{id:2,x:.7,y:.4}],other,800,600);
+ assert.ok(Math.abs((wider.y2-wider.y1)-.4)<1e-9);assert.ok(Math.abs((wider.x2-wider.x1)-.15)<1e-9);
+});

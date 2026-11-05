@@ -26,9 +26,14 @@ export function pinchFromTouches(shape:Annotation,touches:TouchPoint[],state:Two
  // Lock the axis from the starting regions for the entire gesture.
  const scaleX=initial.axis==='vertical'?1:initial.axis==='horizontal'?Math.min(Math.max(.02,Math.abs(b.x-a.x)/initial.gapX),w?1/w:Infinity):scale;
  const scaleY=initial.axis==='horizontal'?1:initial.axis==='vertical'?Math.min(Math.max(.02,Math.abs(b.y-a.y)/initial.gapY),h?1/h:Infinity):scale;
- const halfW=w*scaleX/2,halfH=h*scaleY/2;
+ let spanX=(s.x2-s.x1)*scaleX,spanY=(s.y2-s.y1)*scaleY;
+ // A perfectly horizontal/vertical arrow has no span to multiply on one axis.
+ // Expanding that axis opens it from zero, without a jump when fingers land.
+ if(s.kind==='arrow'&&initial.axis==='horizontal'&&w===0)spanX=Math.min(1,w+Math.max(0,scaleX-1)*Math.max(h*height,1)/width);
+ if(s.kind==='arrow'&&initial.axis==='vertical'&&h===0)spanY=Math.min(1,h+Math.max(0,scaleY-1)*Math.max(w*width,1)/height);
+ const halfW=Math.abs(spanX)/2,halfH=Math.abs(spanY)/2;
  const cx=clamp((s.x1+s.x2)/2+midX-initial.midX,halfW,1-halfW),cy=clamp((s.y1+s.y2)/2+midY-initial.midY,halfH,1-halfH);
- return {...s,x1:cx+(s.x1-s.x2)*scaleX/2,y1:cy+(s.y1-s.y2)*scaleY/2,x2:cx+(s.x2-s.x1)*scaleX/2,y2:cy+(s.y2-s.y1)*scaleY/2};
+ return {...s,x1:cx-spanX/2,y1:cy-spanY/2,x2:cx+spanX/2,y2:cy+spanY/2};
 }
 export function movedPastHold(start:{x:number;y:number},point:{x:number;y:number},width:number,height:number){return Math.hypot((point.x-start.x)*width,(point.y-start.y)*height)>8;}
 export function resizeFromTouches(shape:Annotation,touches:TouchPoint[],state:TwoPointState):Annotation{
