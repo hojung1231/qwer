@@ -63,6 +63,11 @@ public class Touch extends Instrumentation {
     try {
       down=SystemClock.uptimeMillis();float x=number("x1"),y=number("y1"),x2=number("x2"),y2=number("y2");
       String mode=args.getString("mode");
+      if("image-loaded".equals(mode)){
+        Bitmap screen=getUiAutomation().takeScreenshot();int pixel=screen.getPixel((int)x,(int)y);screen.recycle();
+        if(Math.abs(Color.red(pixel)-210)>15||Math.abs(Color.green(pixel)-220)>15||Math.abs(Color.blue(pixel)-200)>15)throw new Exception("Received full-resolution photo was not rendered");
+        result.putString("imageLoaded","true");finish(Activity.RESULT_OK,result);return;
+      }
       event(MotionEvent.ACTION_DOWN,new float[][]{{x,y}});
       Rect title=mode.startsWith("strip")||mode.startsWith("project")?titleBounds():null;
       if(mode.startsWith("project")){

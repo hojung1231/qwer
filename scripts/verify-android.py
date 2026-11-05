@@ -75,7 +75,7 @@ def gesture(mode,box,start,end):
     command=['shell','am','instrument','-w']
     for key,value in arguments.items():command+=['-e',key,str(value)]
     output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
-    expected='axisStable=true' if mode.startswith('axis-') else 'pinchStable=true' if mode.startswith('pinch') else 'movedWithoutTrash=true' if mode=='move-no-trash' else 'projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
+    expected='imageLoaded=true' if mode=='image-loaded' else 'axisStable=true' if mode.startswith('axis-') else 'pinchStable=true' if mode.startswith('pinch') else 'movedWithoutTrash=true' if mode=='move-no-trash' else 'projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
     assert expected in output,output
     time.sleep(1)
 
@@ -325,6 +325,7 @@ try:
     assert find('사진 메모 텍스트') is None and find('사진 촬영') is None
     assert find('메모 텍스트 초기화') is None and find('AI') is None and find('재촬영') is None
     assert not any(n.attrib.get('class')=='android.widget.EditText' for n in tree().iter('node'))
+    time.sleep(2);received_frame=bounds(find('촬영 프레임'));center=((received_frame[0]+received_frame[2])//2,(received_frame[1]+received_frame[3])//2);gesture('image-loaded',received_frame,center,center)
     screenshot('android-received-reader.png');tap('수신함으로 돌아가기')
     assert contains('수신 모드, 새 자료 1개');rpc('receipts');fixture.terminate();fixture.wait(timeout=5)
     verified.append('received-capture-layout-is-read-only-and-opening-one-set-decrements-unread-count')
