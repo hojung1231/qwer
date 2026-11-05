@@ -1,4 +1,4 @@
-import {Directory,File} from 'expo-file-system';
+import {Directory,File,FileMode} from 'expo-file-system';
 import type {FolderState,Project} from './model';
 export async function chooseProjectRoot(initialUri?:string){
  const directory=await Directory.pickDirectoryAsync(initialUri);
@@ -14,7 +14,14 @@ export async function exportProjectFolder(project:Project,rootUri:string):Promis
  const target=(filename:string,mime:string)=>existing.get(filename)||directory.createFile(filename,mime);
  async function copy(uri:string|undefined,filename:string,mime:string){
   if(!uri)return undefined;
-  if(project.folder?.uri!==directory.uri||project.folder.files[filename]!==uri||!existing.has(filename))await new File(uri).copy(target(filename,mime),{overwrite:true});
+  if(project.folder?.uri!==directory.uri||project.folder.files[filename]!==uri||!existing.has(filename)){
+   const input=new File(uri).open(FileMode.ReadOnly);
+   try{
+    const output=target(filename,mime).open(FileMode.Truncate);
+    try{for(;;){const bytes=await input.readBytes(512*1024);if(!bytes.length)break;await output.writeBytes(bytes);}}
+    finally{output.close();}
+   }finally{input.close();}
+  }
   files[filename]=uri;return filename;
  }
  const records=[];
