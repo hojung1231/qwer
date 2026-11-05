@@ -238,6 +238,10 @@ try:
     capture_folder=next(p.parent for p in pathlib.Path('capture-output').rglob('프로젝트.json') if json.loads(p.read_text())['project']['title']=='새 외근 기록')
     photos=captures[0]['project']['items'];w,h=jpeg_size(capture_folder/photos[2]['uri']);assert abs(w/h-.75)<.002,(w,h)
     verified.append('captured-portrait-file-has-actual-3x4-pixels')
+    adb('shell','am','force-stop','com.hojung1231.bogoagain')
+    adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity');time.sleep(4)
+    tap('새 외근 기록');assert find('프로젝트 선택, Project2') is not None
+    verified.append('project-folder-selection-and-created-folders-persist-after-restart')
 finally:
     pathlib.Path('android-ui-verification.json').write_text(json.dumps({'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
     pathlib.Path('window.xml').write_text(ET.tostring(tree(),encoding='unicode'),encoding='utf-8')
