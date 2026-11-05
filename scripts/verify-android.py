@@ -100,6 +100,8 @@ def swipe_project(current,target,direction):
     assert find('프로젝트 선택, '+target) is not None,(current,target)
 
 verified=[]
+build_code=int(re.search(r'versionCode=(\d+)',adb('shell','dumpsys','package','com.hojung1231.bogoagain')).group(1))
+diagnostic_old_build=build_code==9
 try:
     assert contains('새 작업 시작')
     assert contains('앱 업데이트')
@@ -127,7 +129,8 @@ try:
     overlap=(first[2]-second[0])/(first[2]-first[0])
     assert .25<overlap<.35,overlap
     verified.append('repeat-shutter-and-thumbnail-overlap')
-    for mode in ('strip','strip-cancel'):
+    # Build 9's known cancel-recovery failure is diagnosed separately; continue exercising other new features.
+    for mode in (('strip',) if diagnostic_old_build else ('strip','strip-cancel')):
         first,second=bounds(find('현장 기록 1 선택')),bounds(find('현장 기록 2 선택'))
         # Diagonal wobble exceeds Android's native scroll touch slop while selecting left/right.
         start=((first[0]+first[2])//2,(first[1]+first[3])//2)
@@ -140,7 +143,7 @@ try:
         assert title is None or bounds(title)[1]<old[1]-20,'Vertical scrolling stayed locked after '+mode
         top()
     screenshot('android-strip-drag.png')
-    verified.append('thumbnail-drag-with-vertical-wobble-and-scroll-unlock-after-up-and-cancel')
+    verified.append('thumbnail-drag-with-vertical-wobble-and-scroll-unlock-after-up'+('' if diagnostic_old_build else '-and-cancel'))
     tap('현장 기록 1 선택');tap('사진 편집 열기');time.sleep(3)
     tap('원 개체 선택')
     x1,y1,x2,y2=bounds(find('사진 편집 캔버스'))
@@ -245,7 +248,8 @@ try:
     adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity');time.sleep(4)
     tap('새 외근 기록');assert find('프로젝트 선택, Project2') is not None
     verified.append('project-folder-selection-and-created-folders-persist-after-restart')
+    assert not diagnostic_old_build,'Diagnostic build 9 still requires cancel-recovery fix in build 10'
 finally:
-    pathlib.Path('android-ui-verification.json').write_text(json.dumps({'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
+    pathlib.Path('android-ui-verification.json').write_text(json.dumps({'buildCode':build_code,'knownIssueSkipped':['cancel-recovery'] if diagnostic_old_build else [],'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
     pathlib.Path('window.xml').write_text(ET.tostring(tree(),encoding='unicode'),encoding='utf-8')
     screenshot('android-final.png')
