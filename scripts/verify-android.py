@@ -75,7 +75,7 @@ def gesture(mode,box,start,end):
     command=['shell','am','instrument','-w']
     for key,value in arguments.items():command+=['-e',key,str(value)]
     output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
-    expected='pinchStable=true' if mode.startswith('pinch') else 'movedWithoutTrash=true' if mode=='move-no-trash' else 'projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
+    expected='axisStable=true' if mode.startswith('axis-') else 'pinchStable=true' if mode.startswith('pinch') else 'movedWithoutTrash=true' if mode=='move-no-trash' else 'projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
     assert expected in output,output
     time.sleep(1)
 
@@ -188,6 +188,9 @@ try:
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     mic=bounds(find('편집 중 음성 메모'))
     assert mic[0]>x2 and mic[1]>=y2,'Voice memo is not at the bottom right'
+    gesture('axis-vertical',box,point(.25,.04),point(.25,.48));assert contains('개체 1')
+    gesture('axis-horizontal',box,point(.04,.25),point(.48,.25));assert contains('개체 1')
+    verified.append('region-based-independent-width-and-height-resize-with-two-finger-pan-and-stable-release')
     gesture('pinch-wide',box,point(.04,.04),point(.48,.48));assert contains('개체 1')
     gesture('pinch-narrow',box,point(.2,.2),point(.34,.34));assert contains('개체 1')
     verified.append('relative-pinch-scale-with-wide-and-narrow-grips-no-initial-jump-and-stable-release')

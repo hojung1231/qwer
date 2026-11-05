@@ -28,11 +28,12 @@ public class Touch extends Instrumentation {
   }
   float number(String key){return Float.parseFloat(args.getString(key));}
   Bitmap canvasShot(){Bitmap full=getUiAutomation().takeScreenshot();Bitmap crop=Bitmap.createBitmap(full,(int)number("left"),(int)number("top"),(int)number("width"),(int)number("height"));full.recycle();return crop;}
-  int redWidth(Bitmap image){
-    int w=image.getWidth(),h=image.getHeight(),min=w,max=-1;int[] pixels=new int[w*h];image.getPixels(pixels,0,w,0,0,w,h);
-    for(int i=0;i<pixels.length;i++)if(Color.red(pixels[i])>180&&Color.green(pixels[i])<130&&Color.blue(pixels[i])<130){min=Math.min(min,i%w);max=Math.max(max,i%w);}
-    if(max<min)throw new IllegalStateException("Shape not visible");return max-min+1;
+  Rect redBounds(Bitmap image){
+    int w=image.getWidth(),h=image.getHeight(),left=w,right=-1,top=h,bottom=-1;int[] pixels=new int[w*h];image.getPixels(pixels,0,w,0,0,w,h);
+    for(int i=0;i<pixels.length;i++)if(Color.red(pixels[i])>180&&Color.green(pixels[i])<130&&Color.blue(pixels[i])<130){left=Math.min(left,i%w);right=Math.max(right,i%w);top=Math.min(top,i/w);bottom=Math.max(bottom,i/w);}
+    if(right<left)throw new IllegalStateException("Shape not visible");return new Rect(left,top,right+1,bottom+1);
   }
+  int redWidth(Bitmap image){return redBounds(image).width();}
   Rect trash(AccessibilityNodeInfo node){
     if(node==null)return null;
     if(node.getText()!=null&&node.getText().toString().contains("여기로 끌어 삭제")){Rect r=new Rect();node.getBoundsInScreen(r);return r;}
@@ -92,6 +93,22 @@ public class Touch extends Instrumentation {
         event(MotionEvent.ACTION_MOVE,new float[][]{{x+36,y}});Thread.sleep(650);
         if(trash(getUiAutomation().getRootInActiveWindow())!=null)throw new Exception("Moving object incorrectly opened trash");
         event(MotionEvent.ACTION_UP,new float[][]{{x+36,y}});result.putString("movedWithoutTrash","true");
+      }else if(mode.startsWith("axis-")){
+        Bitmap original=canvasShot();Rect initial=redBounds(original);
+        event(MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),new float[][]{{x,y},{x2,y2}});Thread.sleep(150);
+        Bitmap landed=canvasShot();if(!original.sameAs(landed))throw new Exception("Axis resize jumped on touch down");landed.recycle();
+        boolean vertical=mode.equals("axis-vertical");float cx=(x+x2)/2,cy=(y+y2)/2;
+        for(float factor:new float[]{.75f,1.15f}){
+          event(MotionEvent.ACTION_MOVE,new float[][]{{cx+(x-cx)*factor+10,cy+(y-cy)*factor+8},{cx+(x2-cx)*factor+10,cy+(y2-cy)*factor+8}});Thread.sleep(180);
+          Bitmap resized=canvasShot();Rect actual=redBounds(resized);
+          if(Math.abs(actual.width()-initial.width()*(vertical?1:factor))>12||Math.abs(actual.height()-initial.height()*(vertical?factor:1))>18)throw new Exception("Incorrect independent axis dimensions: "+mode+" "+initial+" -> "+actual);
+          if(Math.abs(actual.exactCenterX()-initial.exactCenterX()-10)>5||Math.abs(actual.exactCenterY()-initial.exactCenterY()-8)>5)throw new Exception("Axis pinch did not pan with both fingers");resized.recycle();
+        }
+        Bitmap before=canvasShot();
+        event(MotionEvent.ACTION_POINTER_UP|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),new float[][]{{cx+(x-cx)*1.15f+10,cy+(y-cy)*1.15f+8},{cx+(x2-cx)*1.15f+10,cy+(y2-cy)*1.15f+8}});
+        event(MotionEvent.ACTION_MOVE,new float[][]{{cx,cy}});event(MotionEvent.ACTION_UP,new float[][]{{cx,cy}});Thread.sleep(200);
+        Bitmap after=canvasShot();if(!before.sameAs(after))throw new Exception("Axis shape changed on finger release");
+        before.recycle();after.recycle();original.recycle();result.putString("axisStable","true");
       }else if(mode.startsWith("pinch")){
         Bitmap original=canvasShot();int initialWidth=redWidth(original);
         event(MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),new float[][]{{x,y},{x2,y2}});Thread.sleep(150);
