@@ -150,6 +150,19 @@ try:
     assert record['annotations'][0]['number']==1
     assert record['annotations'][0]['kind']=='rectangle'
     verified.append('full-resolution-3200x2400-with-original-audio-folder-export')
+    before=(folder/record['uri']).read_bytes()
+    tap('사진 편집 열기');time.sleep(3)
+    box=bounds(find('사진 편집 캔버스'));x1,y1,x2,y2=box
+    adb('shell','input','tap',int(x1+(x2-x1)*.74),int(y1+(y2-y1)*.68));time.sleep(1)
+    tap('노란색 윤곽선');tap('편집 사진 저장');time.sleep(3)
+    tap('폴더 저장');time.sleep(3);assert contains('폴더 저장 완료');tap('확인')
+    adb('pull','/sdcard/Documents/BogoTest','folder-output-updated')
+    updated=list(pathlib.Path('folder-output-updated').rglob('프로젝트.json'));assert len(updated)==1
+    latest=json.loads(updated[0].read_text())['project']['items'][0]
+    assert latest['annotations'][0]['color']=='#f3cd39'
+    output=updated[0].parent/latest['uri'];assert jpeg_size(output)==(3200,2400)
+    assert output.read_bytes()!=before
+    verified.append('project-folder-updates-edited-photo-without-duplicate-activity')
 finally:
     pathlib.Path('android-ui-verification.json').write_text(json.dumps({'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
     pathlib.Path('window.xml').write_text(ET.tostring(tree(),encoding='unicode'),encoding='utf-8')

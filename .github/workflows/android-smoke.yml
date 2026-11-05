@@ -65,6 +65,7 @@ jobs:
             android-editor.png
             android-folder.png
             folder-output/
+            folder-output-updated/
             android-final.png
             android-ui-verification.json
             window.xml
