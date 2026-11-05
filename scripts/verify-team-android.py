@@ -44,10 +44,15 @@ try:
     assert contains('● 연결됨');tap('닫기')
     adb('shell','am','start','-W','-a','android.intent.action.VIEW','-d','bogo-again://invite?token='+connected['secondInvite'],'com.hojung1231.bogoagain');time.sleep(3)
     assert contains('받은 초대로 연결');tap('초대한 팀원과 연결');time.sleep(3)
-    if find('OK') is not None:tap('OK')
+    for _ in range(8):
+        if contains('연결 완료'):tap('OK');break
+        time.sleep(.5)
     assert contains('BogoPeerTwo');screenshot('android-team.png');tap('닫기')
     verified.append('team-table-manual-name-phone-and-single-use-invitation-connect-fake-peer')
-    tap('홈');tap('HighRes Fixture');tap('세트 공유');tap('수신자 BogoPeer');tap('수신자 BogoPeerTwo');tap('선택한 2명에게 보내기')
+    time.sleep(2)
+    if contains('연결 완료'):tap('OK')
+    if find('홈') is not None:tap('홈')
+    tap('HighRes Fixture');tap('세트 공유');tap('수신자 BogoPeer');tap('수신자 BogoPeerTwo');tap('선택한 2명에게 보내기')
     for _ in range(30):
         if contains('세트 전송 완료'):break
         time.sleep(1)
