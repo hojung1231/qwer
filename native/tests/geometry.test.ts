@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {THUMB_WIDTH,THUMB_STEP,hitShape,translateShape,renumber,resizeFromTouches,pinchFromTouches,movedPastHold,centeredCrop} from '../src/geometry.ts';
+import {THUMB_WIDTH,THUMB_STEP,hitShape,translateShape,renumber,resizeFromTouches,pinchFromTouches,pinchAxis,movedPastHold,centeredCrop} from '../src/geometry.ts';
 import type {TwoPointState} from '../src/geometry.ts';
 import type {Annotation} from '../src/model.ts';
 const box:Annotation={id:'1',number:1,kind:'rectangle',color:'#ed4d4d',x1:.2,y1:.2,x2:.5,y2:.6};
@@ -8,8 +8,8 @@ const box:Annotation={id:'1',number:1,kind:'rectangle',color:'#ed4d4d',x1:.2,y1:
 for(const kind of ['circle','rectangle','arrow'] as const){
  test(`${kind}: 바깥 두 점을 대도 위치와 크기는 유지되고 간격 비율로 확대 축소`,()=>{
   const shape={...box,kind},state:TwoPointState={ids:null,finished:false};
-  assert.deepEqual(pinchFromTouches(shape,[{id:1,x:0,y:.4},{id:2,x:1,y:.4}],state,800,600),shape);
-  const smaller=pinchFromTouches(shape,[{id:2,x:.9,y:.4},{id:1,x:.1,y:.4}],state,800,600);
+  assert.deepEqual(pinchFromTouches(shape,[{id:1,x:0,y:.1},{id:2,x:1,y:.9}],state,800,600),shape);
+  const smaller=pinchFromTouches(shape,[{id:2,x:.9,y:.82},{id:1,x:.1,y:.18}],state,800,600);
   assert.ok(Math.abs((smaller.x2-smaller.x1)/.3-.8)<1e-9);
   assert.ok(Math.abs((smaller.y2-smaller.y1)/.4-.8)<1e-9);
   assert.ok(Math.abs((smaller.x1+smaller.x2)/2-.35)<1e-9);
@@ -72,4 +72,32 @@ test('세로 촬영은 원본에서 실제 가로3 세로4 픽셀로 자름',()=
 test('가로 촬영은 원본에서 실제 가로4 세로3 픽셀로 자름',()=>{
  const crop=centeredCrop(3072,4096,4/3);
  assert.deepEqual(crop,{originX:0,originY:896,width:3072,height:2304});
+});
+
+const zones:Record<number,{x:number;y:number}>={1:{x:.1,y:.1},2:{x:.35,y:.1},3:{x:.8,y:.1},4:{x:.1,y:.4},5:{x:.8,y:.4},6:{x:.1,y:.9},7:{x:.35,y:.9},8:{x:.8,y:.9}};
+for(const kind of ['rectangle','circle','arrow'] as const){
+ test(`${kind}: 그림의 28가지 영역 조합과 역순 터치를 모두 분류하고 축 고정 확대/축소/이동`,()=>{
+  for(let a=1;a<=8;a++)for(let b=a+1;b<=8;b++)for(const reversed of [false,true]){
+   const pair=`${a},${b}`,axis=['1,6','2,7','3,8'].includes(pair)?'vertical':['1,3','4,5','6,8'].includes(pair)?'horizontal':'both';
+   const shape={...box,kind},p=[{id:10,...zones[a]},{id:20,...zones[b]}];if(reversed)p.reverse();
+   assert.equal(pinchAxis(shape,p[0],p[1]),axis,pair);
+   const state:TwoPointState={ids:null,finished:false};assert.deepEqual(pinchFromTouches(shape,p,state,800,600),shape);
+   const midX=(p[0].x+p[1].x)/2,midY=(p[0].y+p[1].y)/2;
+   for(const factor of [.75,1.2]){
+    const moved=p.map(t=>({...t,x:midX+(t.x-midX)*factor+.03,y:midY+(t.y-midY)*factor+.02})).reverse();
+    const result=pinchFromTouches(shape,moved,state,800,600);
+    assert.ok(Math.abs((result.x2-result.x1)/.3-(axis==='vertical'?1:factor))<1e-9,`${pair}: width`);
+    assert.ok(Math.abs((result.y2-result.y1)/.4-(axis==='horizontal'?1:factor))<1e-9,`${pair}: height`);
+    assert.ok(Math.abs((result.x1+result.x2)/2-.38)<1e-9,`${pair}: pan x`);
+    assert.ok(Math.abs((result.y1+result.y2)/2-.42)<1e-9,`${pair}: pan y`);
+   }
+   assert.equal(state.baseline?.axis,axis);
+  }
+ });
+}
+test('손가락이 영역 경계를 넘어도 시작 시 결정한 세로 축 유지',()=>{
+ const state:TwoPointState={ids:null,finished:false};pinchFromTouches(box,[{id:1,...zones[2]},{id:2,...zones[7]}],state,800,600);
+ const changed=pinchFromTouches(box,[{id:1,x:.1,y:.25},{id:2,x:.7,y:.75}],state,800,600);
+ assert.ok(Math.abs((changed.x2-changed.x1)-.3)<1e-9);assert.equal(state.baseline?.axis,'vertical');
+ assert.deepEqual(pinchFromTouches(changed,[{id:1,x:.4,y:.5}],state,800,600),changed);
 });
