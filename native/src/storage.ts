@@ -7,7 +7,7 @@ import {Project,Settings,defaults,uid,escapeHtml,RecordItem} from './model';
 let database:Promise<SQLite.SQLiteDatabase>|undefined;
 async function db(){if(!database)database=(async()=>{const d=await SQLite.openDatabaseAsync('bogo-native.db');await d.execAsync('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, updated TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY, data TEXT NOT NULL);');return d;})();return database;}
 const mediaDir=()=>{const d=new Directory(Paths.document,'records');d.create({idempotent:true,intermediates:true});return d;};
-export async function keepMedia(uri:string,ext:string){const target=new File(mediaDir(),`${uid()}.${ext}`);new File(uri).copy(target);return target.uri;}
+export async function keepMedia(uri:string,ext:string){const target=new File(mediaDir(),`${uid()}.${ext}`);await new File(uri).copy(target);return target.uri;}
 export async function saveProject(p:Project){await(await db()).runAsync('INSERT OR REPLACE INTO projects(id,updated,data) VALUES(?,?,?)',p.id,p.updatedAt,JSON.stringify(p));}
 export async function listProjects(){const rows=await(await db()).getAllAsync<{data:string}>('SELECT data FROM projects ORDER BY updated DESC');return rows.map(r=>JSON.parse(r.data) as Project);}
 export async function deleteProject(id:string){await(await db()).runAsync('DELETE FROM projects WHERE id=?',id);}

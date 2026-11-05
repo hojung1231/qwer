@@ -1,8 +1,9 @@
 import * as Crypto from 'expo-crypto';
 export type Annotation={id:string;number:number;kind:'circle'|'rectangle'|'arrow';color:'#ed4d4d'|'#f3cd39'|'#65c86f';x1:number;y1:number;x2:number;y2:number};
 export type RecordItem={id:string;type:'image'|'video'|'audio'|'note';uri?:string;originalUri?:string;annotations?:Annotation[];audioUri?:string;memo:string;createdAt:string};
-export type Project={id:string;title:string;createdAt:string;updatedAt:string;items:RecordItem[];report:string;feedback:string};
-export type Settings={provider:'template'|'qwen'|'openai';url:string;model:string;length:number;photos:number};
+export type FolderState={rootUri:string;uri:string;name:string;files:Record<string,string>};
+export type Project={id:string;title:string;createdAt:string;updatedAt:string;items:RecordItem[];report:string;feedback:string;folder?:FolderState};
+export type Settings={provider:'template'|'qwen'|'openai';url:string;model:string;length:number;photos:number;storageFolderUri?:string;storageFolderName?:string};
 export const defaults:Settings={provider:'template',url:'',model:'',length:600,photos:6};
 export const uid=()=>Crypto.randomUUID();
 export function newProject():Project{const now=new Date();return{id:`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${uid().slice(0,8)}`,title:'새 외근 기록',createdAt:now.toISOString(),updatedAt:now.toISOString(),items:[],report:'',feedback:''};}
