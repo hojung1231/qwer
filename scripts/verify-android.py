@@ -148,6 +148,7 @@ try:
     assert (folder/record['audioUri']).stat().st_size>32000
     assert (folder/record['originalUri']).stat().st_size>0
     assert record['annotations'][0]['number']==1
+    assert record['annotations'][0]['kind']=='rectangle'
     verified.append('full-resolution-3200x2400-with-original-audio-folder-export')
 finally:
     pathlib.Path('android-ui-verification.json').write_text(json.dumps({'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
