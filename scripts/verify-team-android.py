@@ -13,7 +13,7 @@ try:
     tap('bogo-highres.bogo.json');time.sleep(2);tap('OK');tap('HighRes Fixture')
     # App link and invitations use a test-only local share receiver, never real contacts.
     tap('앱 다운로드 링크 공유');tap('Bogo share verifier')
-    app_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    app_share=read_share_payload()
     assert app_share['mime']=='text/plain' and 'releases/download/android-preview/bogo-again-android.apk' in app_share['text']
     verified.append('header-app-download-link-shares-through-Android-chooser')
     tap('팀원 등록');tap('내 이름');app_test_name='BogoAppTest-'+str(time.time_ns())[-8:];adb('shell','input','text',app_test_name);pathlib.Path('team-app-fixture.json').write_text(json.dumps({'name':app_test_name}))
@@ -23,7 +23,7 @@ try:
     tap('추가할 팀원 전화번호');adb('shell','input','text','01000000002');adb('shell','input','keyevent','4')
     tap('팀원 등록 저장');assert contains('BogoPeer') and contains('01000000002')
     tap('카카오톡으로 초대');tap('Bogo share verifier')
-    invite_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    invite_share=read_share_payload()
     invite=re.search(r'join\.html#([a-f0-9]{64})',invite_share['text']).group(1)
     fixture=subprocess.Popen(['node','scripts/team-ui-fixture.cjs'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
     responses=queue.Queue()

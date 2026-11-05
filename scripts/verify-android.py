@@ -25,7 +25,7 @@ def tap(label):
     for attempt in range(8):
         node=find(label)
         if node is not None:
-            x1,y1,x2,y2=bounds(node);adb('shell','input','tap',(x1+x2)//2,(y1+y2)//2);time.sleep(1);return
+            x1,y1,x2,y2=bounds(node);adb('shell','input','tap',(x1+x2)//2,(y1+y2)//2);time.sleep(5 if label=='Bogo share verifier' else 1);return
         if label.endswith('개체 선택'):
             adb('shell','input','swipe',180,750,180,330,400)
         elif label=='Bogo share verifier':pass
@@ -36,6 +36,15 @@ def tap(label):
 
 def screenshot(name):
     pathlib.Path(name).write_bytes(subprocess.check_output(['adb','exec-out','screencap','-p']))
+
+def read_share_payload():
+    for _ in range(20):
+        result=subprocess.run(['adb','shell','run-as','com.bogo.touch','cat','files/share-result.json'],capture_output=True,text=True)
+        if result.returncode==0:
+            try:return json.loads(result.stdout)
+            except json.JSONDecodeError:pass
+        time.sleep(.5)
+    raise AssertionError('Android test share receiver did not finish')
 
 def contains(text):
     return any(text in (n.attrib.get('text','')+' '+n.attrib.get('content-desc','')) for n in tree().iter('node'))
@@ -248,7 +257,7 @@ try:
     verified.append('project-folder-updates-edited-photo-without-duplicate-activity')
     tap('선택 사진 공유');time.sleep(2);screenshot('android-share.png')
     tap('Bogo share verifier');time.sleep(2)
-    shared=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    shared=read_share_payload()
     assert shared['action']=='android.intent.action.SEND' and shared['mime']=='image/jpeg' and shared['count']==1,shared
     assert not shared['hasText'] and not shared['hasMultipleStreams'],shared
     assert (shared['width'],shared['height'])==(3200,2400)
@@ -268,7 +277,7 @@ try:
     verified.append('project-folder-selection-and-created-folders-persist-after-restart')
     # App link and invitations use a test-only local share receiver, never real contacts.
     tap('앱 다운로드 링크 공유');tap('Bogo share verifier')
-    app_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    app_share=read_share_payload()
     assert app_share['mime']=='text/plain' and 'releases/download/android-preview/bogo-again-android.apk' in app_share['text']
     verified.append('header-app-download-link-shares-through-Android-chooser')
     tap('팀원 등록');tap('내 이름');app_test_name='BogoAppTest-'+str(time.time_ns())[-8:];adb('shell','input','text',app_test_name);pathlib.Path('team-app-fixture.json').write_text(json.dumps({'name':app_test_name}))
@@ -278,7 +287,7 @@ try:
     tap('추가할 팀원 전화번호');adb('shell','input','text','01000000002');adb('shell','input','keyevent','4')
     tap('팀원 등록 저장');assert contains('BogoPeer') and contains('01000000002')
     tap('카카오톡으로 초대');tap('Bogo share verifier')
-    invite_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    invite_share=read_share_payload()
     invite=re.search(r'join\.html#([a-f0-9]{64})',invite_share['text']).group(1)
     fixture=subprocess.Popen(['node','scripts/team-ui-fixture.cjs'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
     responses=queue.Queue()
