@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
-export type RecordItem={id:string;type:'image'|'video'|'audio'|'note';uri?:string;audioUri?:string;memo:string;createdAt:string};
+export type Annotation={id:string;number:number;kind:'circle'|'rectangle'|'arrow';color:'#ed4d4d'|'#f3cd39'|'#65c86f';x1:number;y1:number;x2:number;y2:number};
+export type RecordItem={id:string;type:'image'|'video'|'audio'|'note';uri?:string;originalUri?:string;annotations?:Annotation[];audioUri?:string;memo:string;createdAt:string};
 export type Project={id:string;title:string;createdAt:string;updatedAt:string;items:RecordItem[];report:string;feedback:string};
 export type Settings={provider:'template'|'qwen'|'openai';url:string;model:string;length:number;photos:number};
 export const defaults:Settings={provider:'template',url:'',model:'',length:600,photos:6};

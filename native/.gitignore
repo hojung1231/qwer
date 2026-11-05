@@ -40,3 +40,5 @@ yarn-error.*
 /ios
 /android
 .verify-export/
+.lint-report.json
+.update-config.json
