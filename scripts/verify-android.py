@@ -196,7 +196,7 @@ try:
     verified.append('relative-pinch-scale-with-wide-and-narrow-grips-no-initial-jump-and-stable-release')
     gesture('move-no-trash',box,point(.25,.25),point(.25,.25));assert contains('개체 1')
     verified.append('one-finger-object-movement-does-not-open-trash')
-    tap('사각형 개체 선택');gesture('resize',box,point(.58,.52),point(.9,.85));assert contains('개체 2')
+    tap('사각형 개체 선택');gesture('resize',box,point(.7,.62),point(.94,.9));assert contains('개체 2')
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     gesture('delete',box,point(.25,.25),point(.25,.25));assert contains('개체 1')
     verified.append('real-two-finger-release-stability-circle-and-rectangle')
