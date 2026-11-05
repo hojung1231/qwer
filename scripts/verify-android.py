@@ -72,7 +72,7 @@ def gesture(mode,box,start,end):
     command=['shell','am','instrument','-w']
     for key,value in arguments.items():command+=['-e',key,str(value)]
     output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
-    expected='stripStable=true' if mode.startswith('strip') else 'stable=true' if mode=='resize' else 'deleted=true'
+    expected='stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
     assert expected in output,output
     time.sleep(1)
 
@@ -146,8 +146,8 @@ try:
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     mic=bounds(find('편집 중 음성 메모'))
     assert mic[0]>x2 and mic[1]>=y2,'Voice memo is not at the bottom right'
-    gesture('resize',box,point(.04,.04),point(.48,.48));assert contains('개체 1')
-    gesture('resize',box,point(.2,.2),point(.34,.34));assert contains('개체 1')
+    gesture('resize-sized',box,point(.04,.04),point(.48,.48));assert contains('개체 1')
+    gesture('resize-sized',box,point(.2,.2),point(.34,.34));assert contains('개체 1')
     verified.append('selected-object-resizes-outside-and-inside-box-without-creating-another-object')
     tap('사각형 개체 선택');gesture('resize',box,point(.58,.52),point(.9,.85));assert contains('개체 2')
     assert find('선택 개체 선택').attrib.get('selected')=='true'

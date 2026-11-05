@@ -8,6 +8,7 @@ import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.Rect;
 
 /** Test-only APK: inject real multitouch through UiAutomation into the running app. */
@@ -86,6 +87,12 @@ public class Touch extends Instrumentation {
         int left=(int)number("left"),top=(int)number("top"),width=(int)number("width"),height=(int)number("height");
         Bitmap a=Bitmap.createBitmap(before,left,top,width,height),b=Bitmap.createBitmap(after,left,top,width,height);
         if(!a.sameAs(b))throw new Exception("Shape pixels changed after one finger lifted");
+        if("resize-sized".equals(mode)){
+          int min=width,max=-1;int[] pixels=new int[width*height];a.getPixels(pixels,0,width,0,0,width,height);
+          for(int i=0;i<pixels.length;i++)if(Color.red(pixels[i])>180&&Color.green(pixels[i])<130&&Color.blue(pixels[i])<130){min=Math.min(min,i%width);max=Math.max(max,i%width);}
+          float expected=Math.abs(x2-x)-24;
+          if(max<min||Math.abs((max-min+1)-expected)>35)throw new Exception("Selected shape did not resize to the arbitrary touch points");
+        }
         result.putString("stable","true");a.recycle();b.recycle();before.recycle();after.recycle();
       }
       finish(Activity.RESULT_OK,result);
