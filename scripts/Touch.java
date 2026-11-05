@@ -56,8 +56,8 @@ public class Touch extends Instrumentation {
     try {
       down=SystemClock.uptimeMillis();float x=number("x1"),y=number("y1"),x2=number("x2"),y2=number("y2");
       String mode=args.getString("mode");
-      Rect title=mode.startsWith("strip")||mode.startsWith("project")?titleBounds():null;
       event(MotionEvent.ACTION_DOWN,new float[][]{{x,y}});
+      Rect title=mode.startsWith("strip")||mode.startsWith("project")?titleBounds():null;
       if(mode.startsWith("project")){
         Thread.sleep(180);
         for(int i=1;i<=12;i++){
