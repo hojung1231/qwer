@@ -123,7 +123,7 @@ try:
     make_fixture();tap('복원');time.sleep(2)
     if find('bogo-highres.bogo.json') is None:
         tap('Show roots');tap('Downloads')
-    tap('bogo-highres.bogo.json');time.sleep(2);tap('확인')
+    tap('bogo-highres.bogo.json');time.sleep(2);tap('OK')
     tap('HighRes Fixture');tap('현장 기록 1 선택');tap('사진 편집 열기');time.sleep(3)
     tap('원 개체 선택');box=bounds(find('사진 편집 캔버스'));x1,y1,x2,y2=box
     def point(x,y):return (int(x1+(x2-x1)*x),int(y1+(y2-y1)*y))
@@ -140,7 +140,7 @@ try:
         assert internal is not None,ET.tostring(root,encoding='unicode')
         tap_node(internal)
     tap('Documents');tap('BogoTest');tap('Use this folder');tap('Allow');time.sleep(4)
-    assert contains('폴더 저장 완료');screenshot('android-folder.png');tap('확인')
+    assert contains('폴더 저장 완료');screenshot('android-folder.png');tap('OK')
     adb('pull','/sdcard/Documents/BogoTest','folder-output')
     manifests=list(pathlib.Path('folder-output').rglob('프로젝트.json'));assert len(manifests)==1
     manifest=json.loads(manifests[0].read_text());record=manifest['project']['items'][0];folder=manifests[0].parent
@@ -155,7 +155,7 @@ try:
     box=bounds(find('사진 편집 캔버스'));x1,y1,x2,y2=box
     adb('shell','input','tap',int(x1+(x2-x1)*.74),int(y1+(y2-y1)*.68));time.sleep(1)
     tap('노란색 윤곽선');tap('편집 사진 저장');time.sleep(3)
-    tap('폴더 저장');time.sleep(3);assert contains('폴더 저장 완료');tap('확인')
+    tap('폴더 저장');time.sleep(3);assert contains('폴더 저장 완료');tap('OK')
     adb('pull','/sdcard/Documents/BogoTest','folder-output-updated')
     updated=list(pathlib.Path('folder-output-updated').rglob('프로젝트.json'));assert len(updated)==1
     latest=json.loads(updated[0].read_text())['project']['items'][0]
