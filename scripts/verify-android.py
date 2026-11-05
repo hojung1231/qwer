@@ -72,9 +72,29 @@ def gesture(mode,box,start,end):
     command=['shell','am','instrument','-w']
     for key,value in arguments.items():command+=['-e',key,str(value)]
     output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
-    expected='stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
+    expected='projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
     assert expected in output,output
     time.sleep(1)
+
+def create_project(name,first=False):
+    top();tap('새 프로젝트 폴더');tap('프로젝트 폴더 이름')
+    adb('shell','input','text',name);tap('프로젝트 만들기');time.sleep(2)
+    if first:
+        if find('BogoTest') is None:
+            if find('Documents') is None:
+                tap('Show roots')
+                root=tree()
+                internal=next((n for n in root.iter('node') if any(v in n.attrib.get('text','') for v in ['sdk_gphone','Internal storage','Pixel 6'])),None)
+                assert internal is not None,ET.tostring(root,encoding='unicode')
+                tap_node(internal)
+            tap('Documents')
+        tap('BogoTest');tap('Use this folder');tap('Allow');time.sleep(2)
+    assert find('프로젝트 선택, '+name) is not None
+
+def swipe_project(current,target,direction):
+    box=bounds(find('프로젝트 선택, '+current));x=(box[0]+box[2])//2;y=(box[1]+box[3])//2
+    gesture('project',box,(x,y),(x,y+direction*120))
+    assert find('프로젝트 선택, '+target) is not None,(current,target)
 
 verified=[]
 try:
@@ -166,18 +186,21 @@ try:
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     verified.append('tool-rail-returns-to-select-and-voice-memo-is-bottom-right')
     screenshot('android-editor.png');tap('편집 사진 저장');time.sleep(3)
-    tap('폴더 저장');time.sleep(2)
-    if find('Documents') is None:
-        tap('Show roots')
-        root=tree()
-        internal=next((n for n in root.iter('node') if any(v in n.attrib.get('text','') for v in ['sdk_gphone','Internal storage','Pixel 6'])),None)
-        assert internal is not None,ET.tostring(root,encoding='unicode')
-        tap_node(internal)
-    tap('Documents');tap('BogoTest');tap('Use this folder');tap('Allow');time.sleep(4)
-    assert contains('폴더 저장 완료');screenshot('android-folder.png');tap('OK')
+    create_project('Project1',True);create_project('Project2');create_project('Project3')
+    swipe_project('Project3','Project2',1);swipe_project('Project2','Project1',1)
+    swipe_project('Project1','Project2',-1);swipe_project('Project2','Project3',-1)
+    swipe_project('Project3','Project2',1)
+    screenshot('android-project-wheel.png');verified.append('project-wheel-down-selects-previous-up-selects-next')
+    tap('저장');time.sleep(4)
+    assert contains('프로젝트 저장 완료');screenshot('android-folder.png');tap('OK')
     adb('pull','/sdcard/Documents/BogoTest','folder-output')
     manifests=list(pathlib.Path('folder-output').rglob('프로젝트.json'));assert len(manifests)==1
     manifest=json.loads(manifests[0].read_text());record=manifest['project']['items'][0];folder=manifests[0].parent
+    assert folder.parent.name=='Project2' and folder.parent.parent.name=='보고또보고'
+    assert sorted(p.name for p in folder.parent.parent.iterdir() if p.is_dir())==['Project1','Project2','Project3']
+    assert not list((folder.parent.parent/'Project1').rglob('프로젝트.json'))
+    assert not list((folder.parent.parent/'Project3').rglob('프로젝트.json'))
+    verified.append('dedicated-app-root-project-folder-record-set-hierarchy')
     assert jpeg_size(folder/record['uri'])==(3200,2400)
     assert (folder/record['audioUri']).stat().st_size>32000
     assert (folder/record['originalUri']).stat().st_size>0
@@ -191,7 +214,7 @@ try:
     box=bounds(find('사진 편집 캔버스'));x1,y1,x2,y2=box
     adb('shell','input','tap',int(x1+(x2-x1)*.74),int(y1+(y2-y1)*.68));time.sleep(1)
     tap('노란색 윤곽선');tap('편집 사진 저장');time.sleep(3)
-    tap('폴더 저장');time.sleep(3);assert contains('폴더 저장 완료');tap('OK')
+    tap('저장');time.sleep(3);assert contains('프로젝트 저장 완료');tap('OK')
     adb('pull','/sdcard/Documents/BogoTest','folder-output-updated')
     updated=list(pathlib.Path('folder-output-updated').rglob('프로젝트.json'));assert len(updated)==1
     latest=json.loads(updated[0].read_text())['project']['items'][0]
@@ -208,7 +231,7 @@ try:
     assert shared['sha256']==hashlib.sha256(output.read_bytes()).hexdigest(),shared
     pathlib.Path('android-share-verification.json').write_text(json.dumps(shared,indent=2))
     verified.append('share-exactly-one-current-edited-photo-without-report-or-audio')
-    tap('홈');tap('새 외근 기록');tap('폴더 저장');time.sleep(3);tap('OK')
+    tap('홈');tap('새 외근 기록');tap('저장');time.sleep(3);tap('OK')
     adb('pull','/sdcard/Documents/BogoTest','capture-output')
     captures=[json.loads(p.read_text()) for p in pathlib.Path('capture-output').rglob('프로젝트.json') if json.loads(p.read_text())['project']['title']=='새 외근 기록']
     assert len(captures)==1

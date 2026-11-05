@@ -69,6 +69,7 @@ jobs:
             android-report.png
             android-editor.png
             android-folder.png
+            android-project-wheel.png
             folder-output/
             folder-output-updated/
             android-final.png

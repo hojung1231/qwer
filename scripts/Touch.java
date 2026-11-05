@@ -53,9 +53,18 @@ public class Touch extends Instrumentation {
     try {
       down=SystemClock.uptimeMillis();float x=number("x1"),y=number("y1"),x2=number("x2"),y2=number("y2");
       String mode=args.getString("mode");
-      Rect title=mode.startsWith("strip")?titleBounds():null;
+      Rect title=mode.startsWith("strip")||mode.startsWith("project")?titleBounds():null;
       event(MotionEvent.ACTION_DOWN,new float[][]{{x,y}});
-      if(mode.startsWith("strip")){
+      if(mode.startsWith("project")){
+        Thread.sleep(180);
+        for(int i=1;i<=12;i++){
+          event(MotionEvent.ACTION_MOVE,new float[][]{{x+(x2-x)*i/12f,y+(y2-y)*i/12f}});
+          if(!title.equals(titleBounds()))throw new Exception("Project wheel scrolled the whole page");
+        }
+        event(MotionEvent.ACTION_UP,new float[][]{{x2,y2}});Thread.sleep(650);
+        if(!title.equals(titleBounds()))throw new Exception("Page moved when project wheel stopped");
+        result.putString("projectStable","true");
+      }else if(mode.startsWith("strip")){
         Thread.sleep(450);selected(1);
         for(int leg=0;leg<3;leg++){
           float from=leg%2==0?x:x2,to=leg%2==0?x2:x;
