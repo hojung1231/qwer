@@ -1,0 +1,31 @@
+name: Publish existing Android APK
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/android-publish.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recover verified build output
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 41942987201 --name bogo-again-android-apk --dir apk
+          cp apk/bogo-again-android.apk bogo-again-android.apk
+          node -e "require('fs').writeFileSync('recovered-config.json',JSON.stringify({version:'1.1.0',android:{versionCode:3,package:'com.hojung1231.bogoagain'}}))"
+          node native/scripts/create-update-manifest.cjs bogo-again-android.apk recovered-config.json android-update.json
+          gh release upload android-preview bogo-again-android.apk android-update.json --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bogo-again-android-apk
+          path: bogo-again-android.apk
+          retention-days: 30

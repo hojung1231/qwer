@@ -1,7 +1,7 @@
 name: Verify Android launch
 on:
   workflow_run:
-    workflows: ['Build Android APK']
+    workflows: ['Build Android APK', 'Publish existing Android APK']
     types: [completed]
 permissions:
   contents: read
