@@ -1,5 +1,5 @@
 """Android emulator UI verification against the freshly built APK."""
-import base64,io,json,pathlib,re,struct,subprocess,time,wave,zlib,xml.etree.ElementTree as ET
+import base64,hashlib,io,json,pathlib,re,struct,subprocess,time,wave,zlib,xml.etree.ElementTree as ET
 
 def adb(*args):
     return subprocess.check_output(['adb', *map(str,args)]).decode('utf-8', errors='replace')
@@ -91,6 +91,15 @@ try:
     assert contains('현장 기록 1 선택')
     tap('사진 촬영');time.sleep(3);top()
     assert contains('현장 기록 2 선택')
+    tap('촬영 비율 회전');top()
+    adb('shell','input','swipe',800,1850,800,1250,400);time.sleep(1)
+    frame=bounds(find('촬영 프레임'));rotate=bounds(find('촬영 비율 회전'))
+    assert abs((frame[2]-frame[0])/(frame[3]-frame[1])-.75)<.02,frame
+    assert rotate[0]>frame[0]+(frame[2]-frame[0])*.7 and rotate[1]>frame[1]+(frame[3]-frame[1])*.8
+    screenshot('android-portrait.png')
+    tap('사진 촬영');time.sleep(3);top();assert contains('현장 기록 3 선택')
+    tap('촬영 비율 회전');top()
+    verified.append('real-3x4-portrait-capture-frame-and-bottom-right-rotation')
     first,second=bounds(find('현장 기록 1 선택')),bounds(find('현장 기록 2 선택'))
     overlap=(first[2]-second[0])/(first[2]-first[0])
     assert .25<overlap<.35,overlap
@@ -190,6 +199,22 @@ try:
     output=updated[0].parent/latest['uri'];assert jpeg_size(output)==(3200,2400)
     assert output.read_bytes()!=before
     verified.append('project-folder-updates-edited-photo-without-duplicate-activity')
+    tap('선택 사진 공유');time.sleep(2);screenshot('android-share.png')
+    tap('Bogo share verifier');time.sleep(2)
+    shared=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
+    assert shared['action']=='android.intent.action.SEND' and shared['mime']=='image/jpeg' and shared['count']==1,shared
+    assert not shared['hasText'] and not shared['hasMultipleStreams'],shared
+    assert (shared['width'],shared['height'])==(3200,2400)
+    assert shared['sha256']==hashlib.sha256(output.read_bytes()).hexdigest(),shared
+    pathlib.Path('android-share-verification.json').write_text(json.dumps(shared,indent=2))
+    verified.append('share-exactly-one-current-edited-photo-without-report-or-audio')
+    tap('홈');tap('새 외근 기록');tap('폴더 저장');time.sleep(3);tap('OK')
+    adb('pull','/sdcard/Documents/BogoTest','capture-output')
+    captures=[json.loads(p.read_text()) for p in pathlib.Path('capture-output').rglob('프로젝트.json') if json.loads(p.read_text())['project']['title']=='새 외근 기록']
+    assert len(captures)==1
+    capture_folder=next(p.parent for p in pathlib.Path('capture-output').rglob('프로젝트.json') if json.loads(p.read_text())['project']['title']=='새 외근 기록')
+    photos=captures[0]['project']['items'];w,h=jpeg_size(capture_folder/photos[2]['uri']);assert abs(w/h-.75)<.002,(w,h)
+    verified.append('captured-portrait-file-has-actual-3x4-pixels')
 finally:
     pathlib.Path('android-ui-verification.json').write_text(json.dumps({'verified':verified},ensure_ascii=False,indent=2),encoding='utf-8')
     pathlib.Path('window.xml').write_text(ET.tostring(tree(),encoding='unicode'),encoding='utf-8')

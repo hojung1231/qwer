@@ -62,6 +62,10 @@ jobs:
             android-home.png
             android-capture.png
             android-strip-drag.png
+            android-portrait.png
+            android-share.png
+            android-share-verification.json
+            capture-output/
             android-report.png
             android-editor.png
             android-folder.png
