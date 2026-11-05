@@ -64,6 +64,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view android-preview >/dev/null 2>&1 || gh release create android-preview --title '보고또보고 Android 설치 앱' --notes '갤럭시용 미리보기 APK입니다. 실제 기기 촬영 및 녹음 확인이 필요합니다. 사내 Qwen 주소는 앱 설정에서 입력하세요.' --prerelease
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/android-preview" -f sha="$GITHUB_SHA" -F force=true
           gh release upload android-preview 'bogo-again-android.apk' 'android-update.json' --clobber
           gh release delete-asset android-preview --yes -- '-Android.apk' 2>/dev/null || true
