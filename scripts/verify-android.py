@@ -75,7 +75,7 @@ def gesture(mode,box,start,end):
     command=['shell','am','instrument','-w']
     for key,value in arguments.items():command+=['-e',key,str(value)]
     output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
-    expected='projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
+    expected='pinchStable=true' if mode.startswith('pinch') else 'movedWithoutTrash=true' if mode=='move-no-trash' else 'projectStable=true' if mode.startswith('project') else 'stripStable=true' if mode.startswith('strip') else 'stable=true' if mode.startswith('resize') else 'deleted=true'
     assert expected in output,output
     time.sleep(1)
 
@@ -126,6 +126,7 @@ try:
     adb('shell','input','swipe',800,1850,800,1250,400);time.sleep(1)
     frame=bounds(find('촬영 프레임'));rotate=bounds(find('촬영 비율 회전'))
     assert abs((frame[2]-frame[0])/(frame[3]-frame[1])-.75)<.02,frame
+    assert not any(n.attrib.get('text') in ('세로','가로') for n in tree().iter('node')),'Rotation button still has visible text'
     assert rotate[0]>frame[0]+(frame[2]-frame[0])*.7 and rotate[1]>frame[1]+(frame[3]-frame[1])*.8
     screenshot('android-portrait.png')
     tap('사진 촬영');time.sleep(3);top();assert contains('현장 기록 3 선택')
@@ -187,13 +188,16 @@ try:
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     mic=bounds(find('편집 중 음성 메모'))
     assert mic[0]>x2 and mic[1]>=y2,'Voice memo is not at the bottom right'
-    gesture('resize-sized',box,point(.04,.04),point(.48,.48));assert contains('개체 1')
-    gesture('resize-sized',box,point(.2,.2),point(.34,.34));assert contains('개체 1')
-    verified.append('selected-object-resizes-outside-and-inside-box-without-creating-another-object')
+    gesture('pinch-wide',box,point(.04,.04),point(.48,.48));assert contains('개체 1')
+    gesture('pinch-narrow',box,point(.2,.2),point(.34,.34));assert contains('개체 1')
+    verified.append('relative-pinch-scale-with-wide-and-narrow-grips-no-initial-jump-and-stable-release')
+    gesture('move-no-trash',box,point(.25,.25),point(.25,.25));assert contains('개체 1')
+    verified.append('one-finger-object-movement-does-not-open-trash')
     tap('사각형 개체 선택');gesture('resize',box,point(.58,.52),point(.9,.85));assert contains('개체 2')
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     gesture('delete',box,point(.25,.25),point(.25,.25));assert contains('개체 1')
     verified.append('real-two-finger-release-stability-circle-and-rectangle')
+    verified.append('stationary-hold-reveals-trash-at-bottom-right-and-drag-deletes')
     tap('화살표 개체 선택');gesture('resize',box,point(.92,.25),point(.58,.08));assert contains('개체 2')
     assert find('선택 개체 선택').attrib.get('selected')=='true'
     verified.append('tool-rail-returns-to-select-and-voice-memo-is-bottom-right')

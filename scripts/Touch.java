@@ -27,6 +27,12 @@ public class Touch extends Instrumentation {
     event.recycle();Thread.sleep(80);
   }
   float number(String key){return Float.parseFloat(args.getString(key));}
+  Bitmap canvasShot(){Bitmap full=getUiAutomation().takeScreenshot();Bitmap crop=Bitmap.createBitmap(full,(int)number("left"),(int)number("top"),(int)number("width"),(int)number("height"));full.recycle();return crop;}
+  int redWidth(Bitmap image){
+    int w=image.getWidth(),h=image.getHeight(),min=w,max=-1;int[] pixels=new int[w*h];image.getPixels(pixels,0,w,0,0,w,h);
+    for(int i=0;i<pixels.length;i++)if(Color.red(pixels[i])>180&&Color.green(pixels[i])<130&&Color.blue(pixels[i])<130){min=Math.min(min,i%w);max=Math.max(max,i%w);}
+    if(max<min)throw new IllegalStateException("Shape not visible");return max-min+1;
+  }
   Rect trash(AccessibilityNodeInfo node){
     if(node==null)return null;
     if(node.getText()!=null&&node.getText().toString().contains("여기로 끌어 삭제")){Rect r=new Rect();node.getBoundsInScreen(r);return r;}
@@ -82,9 +88,28 @@ public class Touch extends Instrumentation {
         Thread.sleep(250);
         if(!title.equals(titleBounds()))throw new Exception("Page moved when thumbnail drag ended");
         result.putString("stripStable","true");
+      }else if("move-no-trash".equals(mode)){
+        event(MotionEvent.ACTION_MOVE,new float[][]{{x+36,y}});Thread.sleep(650);
+        if(trash(getUiAutomation().getRootInActiveWindow())!=null)throw new Exception("Moving object incorrectly opened trash");
+        event(MotionEvent.ACTION_UP,new float[][]{{x+36,y}});result.putString("movedWithoutTrash","true");
+      }else if(mode.startsWith("pinch")){
+        Bitmap original=canvasShot();int initialWidth=redWidth(original);
+        event(MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),new float[][]{{x,y},{x2,y2}});Thread.sleep(150);
+        Bitmap landed=canvasShot();if(!original.sameAs(landed))throw new Exception("Existing shape jumped when fingers landed");landed.recycle();
+        float cx=(x+x2)/2,cy=(y+y2)/2;
+        for(float factor:new float[]{.7f,1.2f}){
+          event(MotionEvent.ACTION_MOVE,new float[][]{{cx+(x-cx)*factor,cy+(y-cy)*factor},{cx+(x2-cx)*factor,cy+(y2-cy)*factor}});Thread.sleep(180);
+          Bitmap resized=canvasShot();if(Math.abs(redWidth(resized)-initialWidth*factor)>12)throw new Exception("Pinch did not follow relative finger spacing: "+factor);resized.recycle();
+        }
+        Bitmap before=canvasShot();
+        event(MotionEvent.ACTION_POINTER_UP|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),new float[][]{{cx+(x-cx)*1.2f,cy+(y-cy)*1.2f},{cx+(x2-cx)*1.2f,cy+(y2-cy)*1.2f}});
+        event(MotionEvent.ACTION_MOVE,new float[][]{{cx,cy}});event(MotionEvent.ACTION_UP,new float[][]{{cx,cy}});Thread.sleep(200);
+        Bitmap after=canvasShot();if(!before.sameAs(after))throw new Exception("Pinched shape changed when one finger lifted");
+        before.recycle();after.recycle();original.recycle();result.putString("pinchStable","true");
       }else if("delete".equals(mode)){
         Thread.sleep(650);Rect target=trash(getUiAutomation().getRootInActiveWindow());
         if(target==null)throw new Exception("Trash target missing");
+        Bitmap screen=getUiAutomation().takeScreenshot();if(target.centerX()<screen.getWidth()*.7||target.centerY()<screen.getHeight()*.6)throw new Exception("Trash is not at bottom right");screen.recycle();
         event(MotionEvent.ACTION_MOVE,new float[][]{{target.exactCenterX(),target.exactCenterY()}});
         event(MotionEvent.ACTION_UP,new float[][]{{target.exactCenterX(),target.exactCenterY()}});
         result.putString("deleted","true");
