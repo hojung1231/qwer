@@ -1,0 +1,90 @@
+name: Verify Android team exchange
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/android-team-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  launch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: native/package-lock.json
+      - name: Install test client
+        working-directory: native
+        run: npm ci
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download tested APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: 42005623952
+          GH_REPO: ${{ github.repository }}
+        run: gh run download "$RUN_ID" --name bogo-again-android-apk --dir apk
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
+          script: |
+            adb install apk/*.apk
+            bash scripts/build-touch-test.sh
+            adb shell pm grant com.hojung1231.bogoagain android.permission.CAMERA
+            adb shell pm grant com.hojung1231.bogoagain android.permission.RECORD_AUDIO
+            adb logcat -c
+            adb shell am start -W -n com.hojung1231.bogoagain/.MainActivity
+            sleep 12
+            adb shell pidof com.hojung1231.bogoagain
+            adb logcat -d > android-launch.log
+            if grep -E 'FATAL EXCEPTION|ReactNativeJS.*(Error:|Invariant Violation)' android-launch.log; then exit 1; fi
+            adb shell uiautomator dump /sdcard/window.xml
+            adb pull /sdcard/window.xml window.xml
+            adb exec-out screencap -p > android-home.png
+            python3 scripts/verify-team-android.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-team-verification
+          path: |
+            android-launch.log
+            android-home.png
+            android-capture.png
+            android-strip-drag.png
+            android-portrait.png
+            android-share.png
+            android-share-verification.json
+            capture-output/
+            android-report.png
+            android-editor.png
+            android-folder.png
+            android-project-wheel.png
+            folder-output/
+            folder-output-updated/
+            android-final.png
+            android-ui-verification.json
+            android-team.png
+            android-inbox.png
+            android-received-reader.png
+            team-ui-server-verification.json
+            team-app-fixture.json
+            window.xml
