@@ -32,12 +32,44 @@ public class Touch extends Instrumentation {
     for(int i=0;i<node.getChildCount();i++){Rect r=trash(node.getChild(i));if(r!=null)return r;}
     return null;
   }
+  AccessibilityNodeInfo labelled(AccessibilityNodeInfo node,String label){
+    if(node==null)return null;
+    if(label.contentEquals(node.getContentDescription()==null?"":node.getContentDescription()))return node;
+    for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo found=labelled(node.getChild(i),label);if(found!=null)return found;}
+    return null;
+  }
+  Rect titleBounds()throws Exception{
+    AccessibilityNodeInfo node=labelled(getUiAutomation().getRootInActiveWindow(),"작업 제목");
+    if(node==null)throw new Exception("Work title disappeared during strip drag");
+    Rect bounds=new Rect();node.getBoundsInScreen(bounds);return bounds;
+  }
+  void selected(int number)throws Exception{
+    AccessibilityNodeInfo node=labelled(getUiAutomation().getRootInActiveWindow(),"현장 기록 "+number+" 선택");
+    if(node==null||!node.isSelected())throw new Exception("Drag stopped before record "+number);
+  }
   @Override public void onStart(){
     Bundle result=new Bundle();
     try {
       down=SystemClock.uptimeMillis();float x=number("x1"),y=number("y1"),x2=number("x2"),y2=number("y2");
+      String mode=args.getString("mode");
+      Rect title=mode.startsWith("strip")?titleBounds():null;
       event(MotionEvent.ACTION_DOWN,new float[][]{{x,y}});
-      if("delete".equals(args.getString("mode"))){
+      if(mode.startsWith("strip")){
+        Thread.sleep(450);selected(1);
+        for(int leg=0;leg<3;leg++){
+          float from=leg%2==0?x:x2,to=leg%2==0?x2:x;
+          for(int i=1;i<=12;i++){
+            float nextX=from+(to-from)*i/12f,nextY=y+(i%2==0?40:-40);
+            event(MotionEvent.ACTION_MOVE,new float[][]{{nextX,nextY}});
+            if(!title.equals(titleBounds()))throw new Exception("Vertical page scroll intercepted thumbnail drag");
+          }
+          selected(leg%2==0?2:1);
+        }
+        event(mode.equals("strip-cancel")?MotionEvent.ACTION_CANCEL:MotionEvent.ACTION_UP,new float[][]{{x2,y+40}});
+        Thread.sleep(250);
+        if(!title.equals(titleBounds()))throw new Exception("Page moved when thumbnail drag ended");
+        result.putString("stripStable","true");
+      }else if("delete".equals(mode)){
         Thread.sleep(650);Rect target=trash(getUiAutomation().getRootInActiveWindow());
         if(target==null)throw new Exception("Trash target missing");
         event(MotionEvent.ACTION_MOVE,new float[][]{{target.exactCenterX(),target.exactCenterY()}});

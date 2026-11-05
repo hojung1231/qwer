@@ -72,7 +72,8 @@ def gesture(mode,box,start,end):
     command=['shell','am','instrument','-w']
     for key,value in arguments.items():command+=['-e',key,str(value)]
     output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
-    assert ('stable=true' if mode=='resize' else 'deleted=true') in output,output
+    expected='stripStable=true' if mode.startswith('strip') else 'stable=true' if mode=='resize' else 'deleted=true'
+    assert expected in output,output
     time.sleep(1)
 
 verified=[]
@@ -94,6 +95,20 @@ try:
     overlap=(first[2]-second[0])/(first[2]-first[0])
     assert .25<overlap<.35,overlap
     verified.append('repeat-shutter-and-thumbnail-overlap')
+    for mode in ('strip','strip-cancel'):
+        first,second=bounds(find('현장 기록 1 선택')),bounds(find('현장 기록 2 선택'))
+        # Diagonal wobble exceeds Android's native scroll touch slop while selecting left/right.
+        start=((first[0]+first[2])//2,(first[1]+first[3])//2)
+        end=((second[0]+second[2])//2,start[1])
+        gesture(mode,first,start,end)
+        assert find('현장 기록 2 선택').attrib.get('selected')=='true'
+        old=bounds(find('작업 제목'))
+        adb('shell','input','swipe',750,1850,750,1250,400);time.sleep(1)
+        title=find('작업 제목')
+        assert title is None or bounds(title)[1]<old[1]-20,'Vertical scrolling stayed locked after '+mode
+        top()
+    screenshot('android-strip-drag.png')
+    verified.append('thumbnail-drag-with-vertical-wobble-and-scroll-unlock-after-up-and-cancel')
     tap('현장 기록 1 선택');tap('사진 편집 열기');time.sleep(3)
     tap('원 개체 선택')
     x1,y1,x2,y2=bounds(find('사진 편집 캔버스'))
@@ -128,9 +143,19 @@ try:
     tap('원 개체 선택');box=bounds(find('사진 편집 캔버스'));x1,y1,x2,y2=box
     def point(x,y):return (int(x1+(x2-x1)*x),int(y1+(y2-y1)*y))
     gesture('resize',box,point(.1,.1),point(.4,.4));assert contains('개체 1')
+    assert find('선택 개체 선택').attrib.get('selected')=='true'
+    mic=bounds(find('편집 중 음성 메모'))
+    assert mic[0]>x2 and mic[1]>=y2,'Voice memo is not at the bottom right'
+    gesture('resize',box,point(.04,.04),point(.48,.48));assert contains('개체 1')
+    gesture('resize',box,point(.2,.2),point(.34,.34));assert contains('개체 1')
+    verified.append('selected-object-resizes-outside-and-inside-box-without-creating-another-object')
     tap('사각형 개체 선택');gesture('resize',box,point(.58,.52),point(.9,.85));assert contains('개체 2')
+    assert find('선택 개체 선택').attrib.get('selected')=='true'
     gesture('delete',box,point(.25,.25),point(.25,.25));assert contains('개체 1')
     verified.append('real-two-finger-release-stability-circle-and-rectangle')
+    tap('화살표 개체 선택');gesture('resize',box,point(.92,.25),point(.58,.08));assert contains('개체 2')
+    assert find('선택 개체 선택').attrib.get('selected')=='true'
+    verified.append('tool-rail-returns-to-select-and-voice-memo-is-bottom-right')
     screenshot('android-editor.png');tap('편집 사진 저장');time.sleep(3)
     tap('폴더 저장');time.sleep(2)
     if find('Documents') is None:
@@ -149,6 +174,8 @@ try:
     assert (folder/record['originalUri']).stat().st_size>0
     assert record['annotations'][0]['number']==1
     assert record['annotations'][0]['kind']=='rectangle'
+    arrow=record['annotations'][1];assert arrow['kind']=='arrow' and arrow['x1']>arrow['x2'] and arrow['y1']>arrow['y2']
+    verified.append('first-touch-anchors-arrow-shaft')
     verified.append('full-resolution-3200x2400-with-original-audio-folder-export')
     before=(folder/record['uri']).read_bytes()
     tap('사진 편집 열기');time.sleep(3)

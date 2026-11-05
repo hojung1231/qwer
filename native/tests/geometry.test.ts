@@ -29,3 +29,9 @@ test('중간 번호 삭제 및 되돌리기 후 연속 번호',()=>{
  assert.deepEqual(renumber(shapes.filter(s=>s.id!=='2')).map(s=>s.number),[1,2]);
  assert.deepEqual(renumber(shapes).map(s=>s.number),[1,2,3]);
 });
+
+test('화살표는 첫 터치가 축의 시작점이며 터치 배열 순서에 영향받지 않음',()=>{
+ const state:TwoPointState={ids:null,firstId:9,finished:false};
+ const arrow=resizeFromTouches({...box,kind:'arrow'},[{id:3,x:.8,y:.2},{id:9,x:.2,y:.8}],state);
+ assert.deepEqual([arrow.x1,arrow.y1,arrow.x2,arrow.y2],[.2,.8,.8,.2]);
+});

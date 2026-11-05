@@ -2,10 +2,10 @@ import type {Annotation} from './model';
 export const THUMB_WIDTH=60,THUMB_STEP=42;
 export const renumber=(shapes:Annotation[])=>shapes.map((shape,index)=>({...shape,number:index+1}));
 export type TouchPoint={id:number;x:number;y:number};
-export type TwoPointState={ids:[number,number]|null;finished:boolean};
+export type TwoPointState={ids:[number,number]|null;firstId?:number;finished:boolean};
 export function resizeFromTouches(shape:Annotation,touches:TouchPoint[],state:TwoPointState):Annotation{
  if(state.finished)return shape;
- if(!state.ids&&touches.length>=2)state.ids=[touches[0].id,touches[1].id];
+ if(!state.ids&&touches.length>=2){const first=touches.find(t=>t.id===state.firstId)||touches[0];state.ids=[first.id,touches.find(t=>t.id!==first.id)!.id];}
  if(!state.ids)return shape;
  const a=touches.find(t=>t.id===state.ids![0]),b=touches.find(t=>t.id===state.ids![1]);
  if(!a||!b){state.finished=true;return shape;}

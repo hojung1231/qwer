@@ -61,6 +61,7 @@ jobs:
             android-launch.log
             android-home.png
             android-capture.png
+            android-strip-drag.png
             android-report.png
             android-editor.png
             android-folder.png
