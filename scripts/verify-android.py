@@ -103,6 +103,12 @@ verified=[]
 build_code=int(re.search(r'versionCode=(\d+)',adb('shell','dumpsys','package','com.hojung1231.bogoagain')).group(1))
 diagnostic_old_build=build_code==9
 try:
+    # Cold-booted CI emulators occasionally show the launcher's own ANR dialog.
+    # Dismiss only that system dialog; app ANRs must still fail verification.
+    if contains("Pixel Launcher isn't responding"):
+        tap('Close app')
+        adb('shell','am','start','-W','-n','com.hojung1231.bogoagain/.MainActivity')
+        time.sleep(3)
     assert contains('새 작업 시작')
     assert contains('앱 업데이트')
     screenshot('android-home.png');verified.append('home-and-update-button')
