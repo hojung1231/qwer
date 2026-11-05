@@ -124,6 +124,10 @@ try:
     assert contains('현장 기록 2 선택')
     tap('촬영 비율 회전');top()
     adb('shell','input','swipe',800,1850,800,1250,400);time.sleep(1)
+    for _ in range(4):
+        frame=bounds(find('촬영 프레임'))
+        if abs((frame[2]-frame[0])/(frame[3]-frame[1])-.75)<.02:break
+        adb('shell','input','swipe',1040,1850,1040,1700,350);time.sleep(.7)
     frame=bounds(find('촬영 프레임'));rotate=bounds(find('촬영 비율 회전'))
     assert abs((frame[2]-frame[0])/(frame[3]-frame[1])-.75)<.02,frame
     assert not any(n.attrib.get('text') in ('세로','가로') for n in tree().iter('node')),'Rotation button still has visible text'
