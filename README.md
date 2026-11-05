@@ -2,7 +2,7 @@
 
 ## Android 설치 앱
 
-주요 개발 대상은 `native/`의 React Native·Expo Android 앱입니다. [Android 미리보기 릴리스](https://github.com/hojung1231/qwer/releases/tag/android-preview)에서 APK를 내려받습니다. 자세한 실행 및 사내 Qwen 연결 방법은 [네이티브 앱 안내](native/README.md)를 참고하세요. 아래 내용은 이전 웹 프로토타입에 대한 안내입니다.
+주요 개발 대상은 `native/`의 React Native·Expo Android 앱입니다. [Android APK 다운로드](https://github.com/hojung1231/qwer/releases/download/android-preview/bogo-again-android.apk). 설치 후 설정의 업데이트 버튼으로 새 버전을 확인합니다. 현재 화면의 팀원 연결·수신·AI 사용법은 [Android 사용 안내](ANDROID_GUIDE.md)를 참고하세요. 아래 내용은 이전 웹 프로토타입에 대한 안내입니다.
 
 휴대폰용 외근 기록 및 보고서 PWA. 사진·영상 촬영, 음성 메모, 기록 선택, 보고서 편집과 공유를 지원합니다.
 
