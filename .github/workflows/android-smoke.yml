@@ -35,9 +35,11 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
           script: |
             adb install apk/*.apk
+            adb shell pm grant com.hojung1231.bogoagain android.permission.CAMERA
+            adb shell pm grant com.hojung1231.bogoagain android.permission.RECORD_AUDIO
             adb logcat -c
             adb shell am start -W -n com.hojung1231.bogoagain/.MainActivity
             sleep 12
@@ -57,6 +59,7 @@ jobs:
             android-home.png
             android-capture.png
             android-report.png
+            android-editor.png
             android-final.png
             android-ui-verification.json
             window.xml
