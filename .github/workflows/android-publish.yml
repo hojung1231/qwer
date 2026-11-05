@@ -1,9 +1,6 @@
 name: Publish existing Android APK
 # Reuses the completed native build; no recompilation is needed.
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/android-publish.yml']
   workflow_dispatch:
 permissions:
   contents: write
@@ -20,10 +17,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run download 42000038991 --name bogo-again-android-apk --dir apk
+          gh run download 42005623952 --name bogo-again-android-apk --dir apk
           cp apk/bogo-again-android.apk bogo-again-android.apk
-          node -e "require('fs').writeFileSync('recovered-config.json',JSON.stringify({version:'1.5.0',android:{versionCode:13,package:'com.hojung1231.bogoagain'}}))"
+          node -e "require('fs').writeFileSync('recovered-config.json',JSON.stringify({version:'1.5.1',android:{versionCode:14,package:'com.hojung1231.bogoagain'}}))"
           node native/scripts/create-update-manifest.cjs bogo-again-android.apk recovered-config.json android-update.json
+          gh release download android-preview --pattern android-update.json --dir current
+          node -e "const fs=require('fs');if(JSON.parse(fs.readFileSync('current/android-update.json')).versionCode>JSON.parse(fs.readFileSync('android-update.json')).versionCode)throw Error('Refusing to replace a newer Android release')"
           gh release upload android-preview bogo-again-android.apk android-update.json --clobber
       - uses: actions/upload-artifact@v4
         with:
