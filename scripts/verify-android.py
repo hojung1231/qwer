@@ -172,7 +172,7 @@ try:
     adb('shell','input','keyevent','4');time.sleep(1)
     assert contains('Inspection sample two scratches')
     assert find('현장 메모') is None and not contains('보고서 모드')
-    tap('메모 텍스트 초기화');assert find('사진 메모 텍스트').attrib.get('text','')==''
+    tap('메모 텍스트 초기화');assert find('사진 메모 텍스트').attrib.get('text','') in ('','음성 메모를 녹음하거나 여기를 눌러 입력하세요');assert find('메모 텍스트 초기화').attrib.get('enabled')=='false'
     tap('되돌리기');assert contains('Inspection sample two scratches')
     tap('AI');tap('취소');assert contains('Inspection sample two scratches')
     tap('AI');tap('정리');assert contains('개인 OpenAI API 키');tap('OK')
