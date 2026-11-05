@@ -15,7 +15,7 @@ def find(label):
     root=tree()
     for attribute in ('content-desc','text'):
         for node in root.iter('node'):
-            if node.attrib.get(attribute)==label:
+            if node.attrib.get(attribute,'').casefold()==label.casefold():
                 x1,y1,x2,y2=bounds(node)
                 if x2>x1 and y2>y1:return node
     return None
