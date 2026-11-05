@@ -13,8 +13,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -49,7 +47,7 @@ jobs:
             adb shell uiautomator dump /sdcard/window.xml
             adb pull /sdcard/window.xml window.xml
             adb exec-out screencap -p > android-home.png
-            python3 native/tests/smoke.py
+            python3 scripts/verify-android.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
