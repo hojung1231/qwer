@@ -1,5 +1,5 @@
 """Android emulator UI verification against the freshly built APK."""
-import base64,hashlib,io,json,pathlib,re,struct,subprocess,time,wave,select,zlib,xml.etree.ElementTree as ET
+import base64,hashlib,io,json,pathlib,re,struct,subprocess,time,wave,queue,threading,zlib,xml.etree.ElementTree as ET
 
 def adb(*args):
     return subprocess.check_output(['adb', *map(str,args)]).decode('utf-8', errors='replace')
@@ -266,7 +266,7 @@ try:
     app_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
     assert app_share['mime']=='text/plain' and 'releases/download/android-preview/bogo-again-android.apk' in app_share['text']
     verified.append('header-app-download-link-shares-through-Android-chooser')
-    tap('팀원 등록');tap('내 이름');adb('shell','input','text','BogoAppTest')
+    tap('팀원 등록');tap('내 이름');app_test_name='BogoAppTest-'+str(time.time_ns())[-8:];adb('shell','input','text',app_test_name);pathlib.Path('team-app-fixture.json').write_text(json.dumps({'name':app_test_name}))
     tap('내 전화번호');adb('shell','input','text','01000000001');adb('shell','input','keyevent','4')
     tap('내 정보 저장');time.sleep(3)
     tap('팀원 추가');tap('추가할 팀원 이름');adb('shell','input','text','BogoPeer')
@@ -276,16 +276,16 @@ try:
     invite_share=json.loads(adb('shell','run-as','com.bogo.touch','cat','files/share-result.json'))
     invite=re.search(r'join\.html#([a-f0-9]{64})',invite_share['text']).group(1)
     fixture=subprocess.Popen(['node','scripts/team-ui-fixture.cjs'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
+    responses=queue.Queue()
+    def read_responses():
+        for line in fixture.stdout:
+            if line.startswith('RPC '):responses.put(json.loads(line[4:]))
+    threading.Thread(target=read_responses,daemon=True).start()
     def rpc(action,**values):
         fixture.stdin.write(json.dumps({'action':action,**values})+'\n');fixture.stdin.flush()
-        deadline=time.time()+90
-        while time.time()<deadline:
-            ready,_,_=select.select([fixture.stdout],[],[],1)
-            if not ready:continue
-            line=fixture.stdout.readline()
-            if line.startswith('RPC '):
-                result=json.loads(line[4:]);assert result['ok'],result.get('error');return result['result']
-        raise AssertionError('Fake-peer RPC timed out: '+action)
+        try:result=responses.get(timeout=90)
+        except queue.Empty:raise AssertionError('Fake-peer RPC timed out: '+action)
+        assert result['ok'],result.get('error');return result['result']
     connected=rpc('connect',token=invite)
     tap('새로고침')
     for _ in range(20):

@@ -86,4 +86,5 @@ jobs:
             android-inbox.png
             android-received-reader.png
             team-ui-server-verification.json
+            team-app-fixture.json
             window.xml
