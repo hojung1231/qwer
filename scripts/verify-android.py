@@ -28,6 +28,7 @@ def tap(label):
             x1,y1,x2,y2=bounds(node);adb('shell','input','tap',(x1+x2)//2,(y1+y2)//2);time.sleep(1);return
         if label.endswith('개체 선택'):
             adb('shell','input','swipe',180,750,180,330,400)
+        elif label=='Bogo share verifier':pass
         elif attempt==0:top()
         else:adb('shell','input','swipe',540,1850,540,850,450)
         time.sleep(.5)
