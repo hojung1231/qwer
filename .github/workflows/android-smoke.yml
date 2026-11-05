@@ -40,6 +40,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back emulated
           script: |
             adb install apk/*.apk
+            bash scripts/build-touch-test.sh
             adb shell pm grant com.hojung1231.bogoagain android.permission.CAMERA
             adb shell pm grant com.hojung1231.bogoagain android.permission.RECORD_AUDIO
             adb logcat -c

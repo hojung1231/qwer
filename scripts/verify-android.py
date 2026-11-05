@@ -66,6 +66,15 @@ def jpeg_size(path):
         pos+=size
     raise AssertionError('JPEG dimensions not found')
 
+def gesture(mode,box,start,end):
+    x1,y1,x2,y2=box
+    arguments={'mode':mode,'x1':start[0],'y1':start[1],'x2':end[0],'y2':end[1],'left':x1,'top':y1,'width':x2-x1,'height':y2-y1}
+    command=['shell','am','instrument','-w']
+    for key,value in arguments.items():command+=['-e',key,str(value)]
+    output=adb(*command,'com.bogo.touch/com.bogo.touch.Touch')
+    assert ('stable=true' if mode=='resize' else 'deleted=true') in output,output
+    time.sleep(1)
+
 verified=[]
 try:
     assert contains('새 작업 시작')
@@ -116,9 +125,13 @@ try:
         tap('Show roots');tap('Downloads')
     tap('bogo-highres.bogo.json');time.sleep(2);tap('확인')
     tap('HighRes Fixture');tap('현장 기록 1 선택');tap('사진 편집 열기');time.sleep(3)
-    tap('원 개체 선택');x1,y1,x2,y2=bounds(find('사진 편집 캔버스'))
-    adb('shell','input','swipe',int(x1+(x2-x1)*.2),int(y1+(y2-y1)*.2),int(x1+(x2-x1)*.6),int(y1+(y2-y1)*.6),400)
-    time.sleep(1);tap('편집 사진 저장');time.sleep(3)
+    tap('원 개체 선택');box=bounds(find('사진 편집 캔버스'));x1,y1,x2,y2=box
+    def point(x,y):return (int(x1+(x2-x1)*x),int(y1+(y2-y1)*y))
+    gesture('resize',box,point(.1,.1),point(.4,.4));assert contains('개체 1')
+    tap('사각형 개체 선택');gesture('resize',box,point(.58,.52),point(.9,.85));assert contains('개체 2')
+    gesture('delete',box,point(.25,.25),point(.25,.25));assert contains('개체 1')
+    verified.append('real-two-finger-release-stability-circle-and-rectangle')
+    screenshot('android-editor.png');tap('편집 사진 저장');time.sleep(3)
     tap('폴더 저장');time.sleep(2)
     if find('Documents') is None:
         tap('Show roots')
