@@ -123,7 +123,7 @@ kbd {
 }
 .scene-wrap canvas { height: 100%; }
 .clock {
-  position: absolute; left: 14px; top: 10px;
+  position: absolute; right: 14px; top: 10px; text-align: right;
   color: #f3f1ec;
   font-family: var(--f-display);
   font-weight: 800;
@@ -135,8 +135,9 @@ kbd {
 }
 .clock small { font-family: var(--f-body); font-weight: 500; font-size: 12px; opacity: .8; letter-spacing: .04em; }
 .toast {
-  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-  max-width: calc(100% - 28px);
+  position: absolute; left: 68.5%; bottom: 14px; transform: translateX(-50%);
+  width: max-content;
+  max-width: 58%;
   background: rgba(16, 18, 20, .82);
   color: #f6f3ee;
   padding: 8px 14px;
@@ -210,14 +211,20 @@ kbd {
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px;
   z-index: 5;
 }
-.burner { display: grid; gap: 2px; flex: 1 1 220px; max-width: 340px; }
+.dials { display: flex; gap: 16px; flex: 1 1 320px; max-width: 460px; }
+.burner { display: grid; gap: 2px; flex: 1 1 0; min-width: 0; }
+.burner.oven label b { color: var(--warn); }
+.burner.oven input { accent-color: var(--warn); }
+.place { display: flex; align-items: center; gap: 8px; }
+.place-seg button[aria-checked="true"] { background: var(--heat); color: #fff; }
+.place-seg button:disabled { opacity: .4; }
 .burner label { font-size: 13px; color: var(--muted); }
 .burner label b { font-family: var(--f-display); font-size: 22px; color: var(--flame); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .burner input { width: 100%; accent-color: var(--flame); }
 .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .speed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
-.speed-label { font-size: 13px; color: var(--muted); }
+.dock-label { font-size: 13px; color: var(--muted); }
 
 .btn {
   border: 1px solid var(--line);
@@ -301,6 +308,14 @@ legend { font-size: 13px; font-weight: 700; padding: 0; margin-bottom: 6px; lett
 .stats dt { color: var(--muted); }
 .stats dd { margin: 0; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
 .res-actions { display: flex; justify-content: flex-end; }
+.timeline { display: grid; gap: 6px; }
+.timeline-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.timeline-bar span { min-width: 2px; font-size: 11px; color: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; }
+.tl-pan { background: var(--heat); }
+.tl-oven { background: var(--warn); }
+.tl-board { background: var(--muted); }
+.timeline-key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.timeline-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 
 @media (max-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
@@ -328,15 +343,18 @@ legend { font-size: 13px; font-weight: 700; padding: 0; margin-bottom: 6px; lett
   .g-val { font-size: 24px; }
   .g-sub { font-size: 10px; }
   .dock { gap: 8px; padding-top: 8px; }
-  .burner { flex-basis: 100%; max-width: none; }
+  .dials { flex-basis: 100%; max-width: none; gap: 12px; }
   .ticks { display: none; }
+  .place { width: 100%; }
+  .place-seg { flex: 1; }
+  .place-seg button { flex: 1; }
   .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; gap: 6px; }
   .actions .btn { justify-content: center; text-align: center; padding: 8px 4px; font-size: 12.5px; line-height: 1.25; }
   .speed { width: 100%; justify-content: space-between; }
-  .speed-label { display: none; }
+  .speed .dock-label { display: none; }
   .seg button { padding: 6px 9px; }
   .toast { font-size: 12px; padding: 6px 10px; bottom: 8px; }
-  .clock { left: 10px; top: 8px; }
+  .clock { right: 10px; top: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .face i { transition: none; }

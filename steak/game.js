@@ -3,7 +3,6 @@ import * as P from './physics.js';
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const DPR = Math.min(2, window.devicePixelRatio || 1);
-const REST_SPEED = 30;
 
 // ---------- 색 ----------
 const DONE_STOPS = [
@@ -156,8 +155,11 @@ function steakPath(g, cx, cy, w, h) {
 }
 
 // ---------- 상태 ----------
-const BOARD = {x: 26, y: 112, w: 270, h: 330, cx: 161, cy: 277};
+const BOARD = {x: 26, y: 26, w: 270, h: 226, cx: 161, cy: 139};
+const OVEN = {x: 26, y: 268, w: 270, h: 230, cx: 161, cy: 390};
 const PAN = {cx: 548, cy: 268, r: 190};
+const POS = {board: {x: BOARD.cx, y: BOARD.cy}, pan: {x: PAN.cx, y: PAN.cy}, oven: {x: OVEN.cx, y: OVEN.cy + 8}};
+const PLACE_NAME = {board: '도마', pan: '팬', oven: '오븐'};
 const STEAK_W = (100 / 130) * PAN.r;
 const STEAK_H = (120 / 130) * PAN.r;
 
@@ -179,7 +181,6 @@ let flipAnim = null;
 let particles = [];
 let hist = [];
 let histNext = 0;
-let pullTime = null;
 let resultShown = false;
 let lastUi = 0;
 let lastThemeRead = 0;
@@ -217,7 +218,8 @@ function newGame() {
   sim = P.createSim({pan: cfg.pan, startTemp: cfg.start});
   sim.level = Number($('burner').value);
   steakPos = {x: BOARD.cx, y: BOARD.cy};
-  tween = null; flipAnim = null; particles = []; hist = []; histNext = 0; pullTime = null; resultShown = false;
+  sim.ovenT = Number($('oven').value);
+  tween = null; flipAnim = null; particles = []; hist = []; histNext = 0; resultShown = false;
   running = true;
   $('setup').hidden = true;
   $('result').hidden = true;
@@ -231,35 +233,39 @@ function newGame() {
 }
 
 // ---------- 조작 ----------
-function mainAction() {
-  if (!running) return;
-  if (sim.phase === 'preheat') {
-    P.placeSteak(sim);
-    tween = {from: {...steakPos}, to: {x: PAN.cx, y: PAN.cy}, t: 0};
-    hist = []; histNext = 0;
-  } else if (sim.phase === 'cooking') {
-    if (flipAnim) return;
-    flipAnim = {t: 0, before: topFaceColor()};
-    P.flip(sim);
-  } else if (sim.phase === 'done') {
-    showResult();
-  }
+function moveSteak(place) {
+  if (!running || sim.phase === 'done' || sim.place === place) return;
+  const from = {...steakPos};
+  if (!P.moveTo(sim, place)) return;
+  if (sim.log.length === 1) { hist = []; histNext = 0; }
+  tween = {from, to: {...POS[place]}, t: 0};
+  setBaste(false);
   updateButtons();
 }
-function rest() {
-  if (sim.phase !== 'cooking') return;
-  pullTime = sim.cookTime;
-  P.removeToRest(sim);
-  tween = {from: {...steakPos}, to: {x: BOARD.cx, y: BOARD.cy}, t: 0};
+function flipSteak() {
+  if (!running || sim.phase === 'done' || flipAnim) return;
+  flipAnim = {t: 0, before: topFaceColor()};
+  P.flip(sim);
   updateButtons();
+}
+function cutSteak() {
+  if (!running || !P.cut(sim)) return;
+  resultShown = true;
+  updateButtons();
+  setTimeout(showResult, 400);
 }
 function setBaste(on) {
   sim.basting = on && sim.phase === 'cooking';
   $('btnBaste').classList.toggle('active', sim.basting);
 }
 
-$('btnMain').addEventListener('click', mainAction);
-$('btnRest').addEventListener('click', rest);
+$('btnFlip').addEventListener('click', flipSteak);
+$('btnCut').addEventListener('click', cutSteak);
+$('placeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-place]');
+  if (b) moveSteak(b.dataset.place);
+});
+$('oven').addEventListener('input', (e) => { sim.ovenT = Number(e.target.value); $('ovenVal').textContent = `${e.target.value}°`; });
 $('btnOil').addEventListener('click', () => { sim.oil = true; updateButtons(); });
 const baste = $('btnBaste');
 baste.addEventListener('pointerdown', (e) => { e.preventDefault(); baste.setPointerCapture?.(e.pointerId); setBaste(true); });
@@ -296,7 +302,11 @@ document.addEventListener('keydown', (e) => {
   if (!$('setup').hidden || !$('result').hidden) return;
   if (e.code === 'Space') {
     e.preventDefault();
-    if (!e.repeat) mainAction();
+    if (!e.repeat) flipSteak();
+  } else if (e.code === 'KeyC' && !e.repeat) {
+    cutSteak();
+  } else if (!e.repeat && (e.code === 'KeyP' || e.code === 'KeyO' || e.code === 'KeyR')) {
+    moveSteak({KeyP: 'pan', KeyO: 'oven', KeyR: 'board'}[e.code]);
   } else if (e.code === 'KeyB') {
     if (!e.repeat) setBaste(true);
   } else if ((e.code === 'ArrowUp' || e.code === 'ArrowRight') && e.target.id !== 'burner') {
@@ -304,7 +314,7 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.code === 'ArrowDown' || e.code === 'ArrowLeft') && e.target.id !== 'burner') {
     nudgeBurner(-1);
   } else if (/^Digit[1-5]$/.test(e.code)) {
-    setSpeed([1, 2, 4, 8, 16][Number(e.code.slice(5)) - 1]);
+    setSpeed([1, 4, 16, 32, 64][Number(e.code.slice(5)) - 1]);
   }
 });
 document.addEventListener('keyup', (e) => {
@@ -319,17 +329,21 @@ function nudgeBurner(d) {
 
 function updateButtons() {
   const ph = sim.phase;
-  const main = $('btnMain');
-  const label = {preheat: '고기 올리기', cooking: '뒤집기', resting: '레스팅 중', done: '결과 보기'}[ph];
-  main.innerHTML = `${label}${ph === 'resting' ? '' : ' <kbd>Space</kbd>'}`;
-  main.disabled = !running || ph === 'resting';
-  $('btnOil').disabled = !running || sim.oil || ph === 'resting' || ph === 'done';
+  const live = running && ph !== 'done';
+  for (const b of $('placeSeg').querySelectorAll('button')) {
+    b.setAttribute('aria-checked', String(b.dataset.place === sim.place));
+    b.disabled = !live;
+  }
+  $('btnFlip').disabled = !live;
+  $('btnOil').disabled = !live || sim.oil;
   $('btnOil').textContent = sim.oil ? '기름 두름' : '기름 두르기';
-  $('btnBaste').disabled = !running || ph !== 'cooking';
-  $('btnRest').disabled = !running || ph !== 'cooking';
+  $('btnBaste').disabled = !live || sim.place !== 'pan';
+  $('btnCut').disabled = !live || ph !== 'cooking' || sim.place === 'pan';
+  $('btnCut').title = sim.place === 'pan' ? '팬에서 먼저 꺼내야 자를 수 있습니다' : '';
   const chip = $('chipPhase');
-  chip.dataset.phase = ph;
-  chip.textContent = {preheat: '예열', cooking: '굽는 중', resting: '레스팅', done: '완료'}[ph];
+  const state = ph === 'done' ? 'done' : ph === 'prep' ? 'preheat' : sim.place === 'board' ? 'resting' : 'cooking';
+  chip.dataset.phase = state;
+  chip.textContent = ph === 'done' ? '완료' : ph === 'prep' ? '준비' : {pan: '팬에서 굽는 중', oven: '오븐에서 데우는 중', board: '도마에서 휴지'}[sim.place];
 }
 
 // ---------- 소리 ----------
@@ -423,6 +437,8 @@ function drawScene(now) {
   g.clip();
   g.drawImage(woodTex, BOARD.x, BOARD.y, BOARD.w, BOARD.h);
   g.restore();
+  drawOven(g, now);
+  sceneLabel(g, '도마', BOARD.x + 12, BOARD.y + 22);
   // 불꽃
   drawFlames(g, now);
   // 팬
@@ -544,9 +560,84 @@ function drawScene(now) {
   g.restore();
   g.restore();
 
+  drawOvenGlass(g);
+  sceneLabel(g, `오븐 ${sim.ovenT}°C`, OVEN.x + 14, OVEN.y + 24);
   // 입자
   spawnParticles();
   drawParticles(g);
+}
+
+function sceneLabel(g, text, x, y) {
+  g.font = '600 13px "IBM Plex Sans KR", sans-serif';
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = 'rgba(0,0,0,.45)';
+  g.fillText(text, x + 1, y + 1);
+  g.fillStyle = 'rgba(255,248,240,.9)';
+  g.fillText(text, x, y);
+}
+
+// 오븐: 문과 창, 선반, 온도에 따라 달아오르는 열선
+function drawOven(g, now) {
+  const {x, y, w, h} = OVEN;
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,.5)';
+  g.shadowBlur = 16;
+  roundRect(g, x, y, w, h, 14);
+  g.fillStyle = '#3a3d41';
+  g.fill();
+  g.restore();
+  const wx = x + 12, wy = y + 34, ww = w - 24, wh = h - 46;
+  roundRect(g, wx, wy, ww, wh, 10);
+  const glow = clamp((sim.ovenT - 50) / 200, 0, 1);
+  const ig = g.createLinearGradient(0, wy, 0, wy + wh);
+  ig.addColorStop(0, '#16171a');
+  ig.addColorStop(1, `rgb(${40 + glow * 90 | 0},${22 + glow * 30 | 0},${14})`);
+  g.fillStyle = ig;
+  g.fill();
+  // 열선
+  const flick = 0.85 + Math.sin(now / 300) * 0.15;
+  g.strokeStyle = `rgba(255,${110 + glow * 60 | 0},40,${(0.25 + glow * 0.65) * flick})`;
+  g.lineWidth = 3;
+  for (const yy of [wy + 10, wy + wh - 10]) {
+    g.beginPath();
+    for (let k = 0; k <= 8; k++) {
+      const xx = wx + 14 + ((ww - 28) * k) / 8;
+      k ? g.lineTo(xx, yy + (k % 2 ? 4 : -4)) : g.moveTo(xx, yy);
+    }
+    g.stroke();
+  }
+  // 선반
+  g.strokeStyle = 'rgba(190,195,200,.35)';
+  g.lineWidth = 1.5;
+  for (let k = 0; k < 9; k++) {
+    const xx = wx + 20 + ((ww - 40) * k) / 8;
+    g.beginPath();
+    g.moveTo(xx, wy + 22);
+    g.lineTo(xx, wy + wh - 22);
+    g.stroke();
+  }
+  // 손잡이
+  g.fillStyle = '#9aa0a6';
+  roundRect(g, x + 40, y + 12, w - 80, 8, 4);
+  g.fill();
+}
+function drawOvenGlass(g) {
+  const wx = OVEN.x + 12, wy = OVEN.y + 34, ww = OVEN.w - 24, wh = OVEN.h - 46;
+  g.save();
+  roundRect(g, wx, wy, ww, wh, 10);
+  g.clip();
+  const gl = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
+  gl.addColorStop(0, 'rgba(255,255,255,.10)');
+  gl.addColorStop(0.35, 'rgba(255,255,255,.02)');
+  gl.addColorStop(1, 'rgba(0,0,0,.18)');
+  g.fillStyle = gl;
+  g.fillRect(wx, wy, ww, wh);
+  g.restore();
+  g.strokeStyle = '#55595e';
+  g.lineWidth = 3;
+  roundRect(g, wx, wy, ww, wh, 10);
+  g.stroke();
 }
 
 function avgRow(a, z) {
@@ -580,9 +671,9 @@ function drawFlames(g, now) {
 }
 
 function spawnParticles() {
-  const onPan = sim.onPan && !tween;
+  const onPan = sim.place === 'pan' && !tween;
   const realDt = 1 / 60;
-  const steamRate = Math.min(30, sim.steam * 6e4);
+  const steamRate = sim.place === 'oven' && !tween ? 0 : Math.min(30, sim.steam * 6e4);
   let k = steamRate * realDt;
   while (k > 0) {
     if (Math.random() < k) {
@@ -597,7 +688,7 @@ function spawnParticles() {
     k -= 1;
   }
   const w = P.warnings(sim);
-  if (onPan && (w.includes('oil-smoke') || w.includes('burning'))) {
+  if (w.includes('oil-smoke') || (onPan && w.includes('burning'))) {
     const rate = w.includes('burning') ? 0.6 : 0.3;
     if (Math.random() < rate) {
       particles.push({kind: 'smoke', x: PAN.cx + (Math.random() - 0.5) * 220, y: PAN.cy + (Math.random() - 0.5) * 200, vx: (Math.random() - 0.5) * 0.3, vy: -0.4 - Math.random() * 0.5, life: 1, r: 14 + Math.random() * 16});
@@ -655,10 +746,18 @@ function drawSection() {
   const g = section.ctx, W = section.w, H = section.h;
   g.clearRect(0, 0, W, H);
   const x0 = 64, x1 = W - 24, y0 = 26, y1 = H - 34;
-  const onPan = sim.onPan;
-  // 팬 / 도마
-  g.fillStyle = onPan ? '#3a3a3c' : '#94643a';
-  g.fillRect(x0 - 20, y1, x1 - x0 + 40, onPan ? 10 : 14);
+  const onPan = sim.place === 'pan';
+  // 팬 / 도마 / 오븐 선반
+  if (sim.place === 'oven') {
+    g.fillStyle = `rgba(240,140,50,${clamp((sim.ovenT - 50) / 400, 0.05, 0.4)})`;
+    g.fillRect(x0 - 20, y0 - 12, x1 - x0 + 40, y1 - y0 + 24);
+    g.fillStyle = '#9aa0a6';
+    for (let xx = x0 - 10; xx < x1 + 20; xx += 24) g.fillRect(xx, y1, 4, 6);
+    g.fillRect(x0 - 20, y1 + 6, x1 - x0 + 40, 2);
+  } else {
+    g.fillStyle = onPan ? '#3a3a3c' : '#94643a';
+    g.fillRect(x0 - 20, y1, x1 - x0 + 40, onPan ? 10 : 14);
+  }
   if (onPan) {
     g.fillStyle = `rgba(255,${clamp(200 - (sim.panT - 100), 60, 200) | 0},60,${clamp((sim.panT - 120) / 300, 0, 0.5)})`;
     g.fillRect(x0 - 20, y1, x1 - x0 + 40, 4);
@@ -701,7 +800,7 @@ function drawSection() {
   g.font = '12px "IBM Plex Sans KR", sans-serif';
   const faceUp = sim.face === 0 ? 'B' : 'A', faceDown = sim.face === 0 ? 'A' : 'B';
   g.fillText(`윗면 · 면 ${faceUp}`, x0, y0 - 8);
-  g.fillText(onPan ? `팬 접촉 · 면 ${faceDown}` : `도마 · 면 ${faceDown}`, x0, H - 6);
+  g.fillText(`${{pan: '팬 접촉', board: '도마', oven: '오븐 선반'}[sim.place]} · 면 ${faceDown}`, x0, H - 6);
   if (view !== 'side') {
     g.textAlign = 'right';
     g.fillText('폭 100mm', x1, H - 6);
@@ -798,19 +897,13 @@ function drawHistory() {
   g.moveTo(pad.l, Y(cfg.target.target));
   g.lineTo(W - pad.r, Y(cfg.target.target));
   g.stroke();
-  if (pullTime != null) {
-    g.strokeStyle = theme.muted;
-    g.setLineDash([3, 3]);
-    g.beginPath();
-    g.moveTo(X(pullTime), pad.t);
-    g.lineTo(X(pullTime), H - pad.b);
-    g.stroke();
-    g.setLineDash([]);
-    g.fillStyle = theme.muted;
-    g.font = '11px "IBM Plex Sans KR", sans-serif';
-    g.textAlign = 'left';
-    g.textBaseline = 'top';
-    g.fillText('레스팅', X(pullTime) + 4, pad.t);
+  // 위치 구간 음영: 팬은 붉게, 오븐은 노랗게
+  for (const seg of P.segments(sim)) {
+    if (seg.place === 'board') continue;
+    g.fillStyle = seg.place === 'pan' ? theme.heat : theme.warn;
+    g.globalAlpha = 0.14;
+    g.fillRect(X(seg.from), pad.t, Math.max(1, X(seg.to) - X(seg.from)), H - pad.t - pad.b);
+    g.globalAlpha = 1;
   }
   if (hist.length > 1) {
     g.strokeStyle = theme.heat;
@@ -828,7 +921,8 @@ function drawHistory() {
   g.font = '11px "JetBrains Mono", monospace';
   g.textBaseline = 'alphabetic';
   g.textAlign = 'center';
-  for (let m = 0; m * 60 <= tMax; m += tMax > 1500 ? 5 : 2) g.fillText(`${m}분`, X(m * 60), H - 6);
+  const stepMin = tMax > 3600 ? 15 : tMax > 1500 ? 5 : 2;
+  for (let m = 0; m * 60 <= tMax; m += stepMin) g.fillText(`${m}분`, X(m * 60), H - 6);
 }
 
 // ---------- 계기 ----------
@@ -845,7 +939,7 @@ function updateUi() {
   $('gCoreSub').textContent = cfg.probe ? (left > 0 ? `목표까지 ${left.toFixed(1)}°` : `목표 +${(-left).toFixed(1)}°`) : '탐침 없음';
   $('gBottom').textContent = cfg.probe ? `${Math.round(bottom)}°` : '—';
   $('gTop').textContent = `${Math.round(top)}°`;
-  $('gBottomSub').textContent = `면 ${sim.face === 0 ? 'A' : 'B'}${sim.onPan ? ' · 팬 접촉' : ''}`;
+  $('gBottomSub').textContent = `면 ${sim.face === 0 ? 'A' : 'B'} · ${{pan: '팬 접촉', board: '도마', oven: '오븐'}[sim.place]}`;
   $('gTopSub').textContent = `면 ${sim.face === 0 ? 'B' : 'A'}${sim.basting ? ' · 버터' : ''}`;
   const [fa, fb] = sim.faceTime;
   $('faceA').textContent = fmtShort(fa);
@@ -855,8 +949,8 @@ function updateUi() {
   $('faceBBar').style.width = `${(fb / tot) * 100}%`;
   $('flipCount').textContent = `${sim.flips}회`;
   const ph = sim.phase;
-  $('clock').textContent = fmtTime(ph === 'preheat' ? sim.time : ph === 'cooking' ? sim.cookTime : sim.restTime);
-  $('clockLabel').textContent = ph === 'preheat' ? '예열' : ph === 'cooking' ? `굽는 중 · ${speed}×` : ph === 'resting' ? `레스팅 · ${REST_SPEED}×` : '완료';
+  $('clock').textContent = fmtTime(ph === 'prep' ? sim.time : sim.cookTime);
+  $('clockLabel').textContent = ph === 'prep' ? `준비 · ${speed}×` : ph === 'done' ? '완료' : `${PLACE_NAME[sim.place]} · ${speed}×`;
   // 안내
   const msg = advice(core);
   const t = $('toast');
@@ -878,31 +972,51 @@ function panLabel(t) {
   if (t < 320) return '아주 뜨거움';
   return '과열';
 }
+// 최근 1분 동안 중심 온도 변화 (°C/분)
+function coreRate() {
+  if (hist.length < 3) return 0;
+  const last = hist[hist.length - 1];
+  let j = hist.length - 2;
+  while (j > 0 && hist[j].t > last.t - 60) j--;
+  const dt = last.t - hist[j].t;
+  return dt > 10 ? ((last.core - hist[j].core) / dt) * 60 : 0;
+}
+
 function advice(core) {
-  if (!running) return null;
+  if (!running || sim.phase === 'done') return null;
   const w = P.warnings(sim);
-  const ph = sim.phase;
-  if (ph === 'preheat') {
-    if (!sim.oil && sim.panT > 150) return {text: '기름을 두르면 팬과 고기의 접촉이 좋아져 크러스트가 고르게 생깁니다.'};
-    if (sim.panT < 150) return {text: '팬을 예열하는 중입니다. 시어링에는 200~250°C 가 알맞습니다. 배속을 올려도 됩니다.'};
-    if (sim.panT < 200) return {text: '거의 다 데워졌습니다.'};
-    if (w.includes('coating')) return {text: '코팅 팬이 손상되는 온도입니다. 불을 줄이세요.', tone: 'bad'};
-    if (w.includes('oil-smoke')) return {text: '기름에서 연기가 납니다. 고기를 올리거나 불을 줄이세요.', tone: 'bad'};
-    return {text: '고기를 올릴 때입니다. Space 또는 고기 올리기.'};
-  }
-  if (ph === 'cooking') {
-    if (w.includes('burning')) return {text: '겉면이 타고 있습니다. 불을 줄이고 뒤집으세요.', tone: 'bad'};
+  const target = cfg.target.target;
+  const place = sim.place;
+  if (place === 'pan') {
+    if (w.includes('burning')) return {text: '겉면이 타고 있습니다. 불을 줄이고 뒤집거나 팬에서 꺼내세요.', tone: 'bad'};
     if (w.includes('coating')) return {text: '코팅 팬이 손상되는 온도입니다.', tone: 'bad'};
     if (w.includes('oil-smoke')) return {text: '기름 발연점(230°C)을 넘었습니다.', tone: 'bad'};
-    const bDown = avgRow(sim.B, 0);
-    if (bDown > 3.4) return {text: '아랫면 크러스트가 충분히 진합니다. 뒤집을 때입니다.'};
-    if (sim.panT < 150) return {text: '팬 온도가 떨어졌습니다. 지글거림이 약해지면 크러스트가 안 생깁니다.'};
-    if (cfg.probe && core >= cfg.target.target - 9 && core < cfg.target.target) return {text: '잔열을 생각하면 곧 꺼낼 때입니다.'};
-    if (cfg.probe && core >= cfg.target.target) return {text: '이미 목표 온도입니다. 레스팅하면 더 오릅니다.', tone: 'bad'};
+    if (avgRow(sim.B, 0) > 3.4) return {text: '아랫면 크러스트가 충분히 진합니다. 뒤집을 때입니다.'};
+    if (sim.panT < 150) return {text: '팬 온도가 떨어졌습니다. 지글거림이 약하면 크러스트가 생기지 않습니다.'};
+    if (cfg.probe && core >= target) return {text: '이미 목표 온도입니다. 꺼내도 잔열로 더 오릅니다.', tone: 'bad'};
+    if (cfg.probe && core >= target - 9) return {text: '잔열을 생각하면 곧 꺼낼 때입니다.'};
     return null;
   }
-  if (ph === 'resting') return {text: `레스팅 중. 잔열이 중심으로 퍼지고 있습니다 (${REST_SPEED}× 빨리 감기).`};
-  return null;
+  // 팬이 비어 있을 때의 팬 상태
+  const panNote = () => {
+    if (w.includes('coating')) return {text: '코팅 팬이 손상되는 온도입니다. 불을 줄이세요.', tone: 'bad'};
+    if (w.includes('oil-smoke')) return {text: '빈 팬의 기름에서 연기가 납니다. 고기를 올리거나 불을 줄이세요.', tone: 'bad'};
+    return null;
+  };
+  if (place === 'oven') {
+    if (cfg.probe && core >= target - 10) return panNote() || {text: sim.panT >= 230 ? '시어링할 때입니다. 팬이 충분히 뜨겁습니다 (P).' : `중심이 목표 -10°C 근처입니다. 팬을 230°C 이상으로 달구세요 (지금 ${Math.round(sim.panT)}°C).`};
+    return panNote() || {text: `오븐 ${sim.ovenT}°C 에서 천천히 데우는 중입니다. 겉면이 마르면 시어링 때 크러스트가 빨리 생깁니다. 배속을 올려도 됩니다.`};
+  }
+  if (sim.phase === 'prep') {
+    if (sim.panT < 150) return {text: '팬을 예열하세요 (시어링 200~250°C). 리버스 시어링이라면 먼저 오븐에 넣으세요 (O).'};
+    if (!sim.oil) return {text: '기름을 두르면 팬과 고기가 고르게 닿아 크러스트가 잘 생깁니다.'};
+    return panNote() || {text: sim.panT < 200 ? '팬이 거의 다 데워졌습니다.' : '고기를 팬에 올릴 때입니다 (P).'};
+  }
+  // 도마에서 쉬는 중
+  const rate = coreRate();
+  if (rate > 0.15) return {text: `도마에서 쉬는 중. 잔열로 중심이 분당 ${rate.toFixed(1)}°C 오르고 있습니다.`};
+  if (cfg.probe && core < target - 3) return {text: '중심 온도가 내려가는 중입니다. 다시 팬이나 오븐에 올리세요.'};
+  return panNote() || {text: '잔열이 거의 다 퍼졌습니다. 자르거나(C) 겉을 한 번 더 시어링하세요.'};
 }
 
 // ---------- 결과 ----------
@@ -932,13 +1046,20 @@ function showResult() {
   } catch {}
   const stats = [
     ['굽기 시간', fmtShort(r.cookTime)],
-    ['레스팅', fmtShort(r.restTime)],
+    ['팬 / 오븐 / 도마', `${fmtShort(r.placeTime.pan)} / ${fmtShort(r.placeTime.oven)} / ${fmtShort(r.placeTime.board)}`],
+    ['팬에 올린 횟수', `${r.panVisits}회`],
     ['뒤집기', `${r.flips}회`],
     ['면 A / 면 B', `${fmtShort(r.faceTime[0])} / ${fmtShort(r.faceTime[1])}`],
     ['크러스트 두께', `${r.crustMm[0]}mm / ${r.crustMm[1]}mm`],
     ['이 굽기 최고점', best && best > r.score ? `${best}점` : `${r.score}점 (새 기록)`],
   ];
   $('resStats').innerHTML = stats.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  const total = Math.max(1, r.cookTime);
+  $('resTimeline').innerHTML = r.segments.map((g) => {
+    const pct = ((g.to - g.from) / total) * 100;
+    const label = pct > 9 ? `${PLACE_NAME[g.place]} ${fmtShort(g.to - g.from)}` : '';
+    return `<span class="tl-${g.place}" style="flex:${pct} 0 0" title="${PLACE_NAME[g.place]} ${fmtShort(g.to - g.from)}">${label}</span>`;
+  }).join('');
   $('result').hidden = false;
   drawCut();
   drawProfile(resProfile, {}, r.profile, cfg.target.target, 120);
@@ -992,19 +1113,11 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (running && sim.phase !== 'done') {
-    const mult = sim.phase === 'resting' ? REST_SPEED : speed;
-    const before = sim.phase;
-    P.advance(sim, dt * mult);
-    if (sim.phase !== 'preheat' && sim.cookTime + sim.restTime >= histNext) {
-      hist.push({t: sim.cookTime + sim.restTime, core: P.coreTemp(sim)});
-      histNext = sim.cookTime + sim.restTime + 4;
+    P.advance(sim, dt * speed);
+    if (sim.phase === 'cooking' && sim.cookTime >= histNext) {
+      hist.push({t: sim.cookTime, core: P.coreTemp(sim)});
+      histNext = sim.cookTime + (speed >= 32 ? 10 : 4);
     }
-    if (before !== sim.phase) updateButtons();
-  }
-  if (running && sim.phase === 'done' && !resultShown) {
-    resultShown = true;
-    updateButtons();
-    setTimeout(showResult, 700);
   }
   if (now - lastThemeRead > 1500) { readTheme(); lastThemeRead = now; }
   drawScene(now);

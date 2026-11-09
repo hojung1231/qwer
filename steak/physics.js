@@ -26,6 +26,7 @@ const PAN_AREA = Math.PI * 0.13 * 0.13; // 지름 26cm
 const STEAK_AREA = NX * DX * DEPTH;
 const BURNER_MAX = 900; // 팬에 실제로 들어가는 최대 열량 (가스 약 2.7kW × 효율 1/3)
 export const OIL_SMOKE = 230;
+export const PLACES = ['board', 'pan', 'oven']; // 도마(휴지), 팬, 오븐 선반
 
 export const PANS = {
   castiron: {name: '무쇠 팬', note: '열용량이 커서 고기를 올려도 온도가 덜 떨어짐. 예열이 느림', mass: 3.0, c: 460, eps: 0.65, maxSafe: Infinity},
@@ -74,12 +75,14 @@ export function createSim({pan = 'castiron', startTemp = 4, ambient = T_AMB} = {
     level: 0,
     oil: false,
     basting: false,
-    onPan: false,
-    phase: 'preheat', // preheat → cooking → resting → done
+    ovenT: 120,
+    place: 'board',
+    phase: 'prep', // prep(도마 위 생고기) → cooking(팬·오븐·도마를 자유롭게 오감) → done(자름)
     time: 0,
     cookTime: 0,
-    restTime: 0,
-    restCoreMax: -Infinity,
+    placeTime: {board: 0, pan: 0, oven: 0},
+    panVisits: 0,
+    log: [], // [{t, place}] 처음 불에 올린 뒤의 이동 기록
     flips: 0,
     face: 0, // 원래 면 0/1 중 지금 팬에 닿는 면
     faceTime: [0, 0],
@@ -90,7 +93,6 @@ export function createSim({pan = 'castiron', startTemp = 4, ambient = T_AMB} = {
     sizzle: 0,
     steam: 0,
     panToMeat: 0,
-    history: [],
   };
   return sim;
 }
@@ -106,7 +108,9 @@ export function step(sim, dt) {
   const n = NX * NZ;
   const pan = PANS[sim.panType];
   const amb = sim.ambient;
-  const onPan = sim.onPan;
+  const onPan = sim.place === 'pan';
+  const inOven = sim.place === 'oven';
+  const ovenT = sim.ovenT;
   for (let i = 0; i < n; i++) {
     const w = W[i];
     k[i] = 0.12 + 0.36 * Math.min(w, W0) / W0;
@@ -155,6 +159,9 @@ export function step(sim, dt) {
       const wet = Math.max(0, Math.min(1, (W[i] - W_RES) / (0.6 * W0 - W_RES)));
       h = (sim.oil ? 520 : 330) * (0.35 + 0.65 * wet); // 표면이 마르면 접촉이 줄어듦
       tf = sim.panT;
+    } else if (inOven) {
+      h = 20; // 오븐 선반: 대류 + 벽 복사
+      tf = ovenT;
     } else {
       h = 22; // 도마로 빠지는 열 + 공기
       tf = amb;
@@ -162,7 +169,7 @@ export function step(sim, dt) {
     const q = boundaryConductance(h, k[i], DX, DZ / 2) * (tf - T[i]);
     dE[i] += q;
     if (onPan) panFlux += q;
-    if (!onPan) evaporate(i, 8, DX, NX);
+    else evaporate(i, inOven ? 14 : 8, DX, NX);
   }
   // 윗면: 공기 또는 버터 베이스팅
   for (let x = 0; x < NX; x++) {
@@ -173,19 +180,20 @@ export function step(sim, dt) {
       dE[i] += q;
       panFlux += q;
     } else {
-      const tf = amb + (onPan ? (sim.panT - amb) * 0.06 : 0);
-      const h = onPan ? 12 : 16; // 자연대류 + 복사
+      const tf = inOven ? ovenT : amb + (onPan ? (sim.panT - amb) * 0.06 : 0);
+      const h = inOven ? 22 : onPan ? 12 : 16; // 자연대류 + 복사
       dE[i] += boundaryConductance(h, k[i], DX, DZ / 2) * (tf - T[i]);
-      evaporate(i, h, DX, -NX);
+      evaporate(i, inOven ? 14 : h, DX, -NX);
     }
   }
   // 옆면: 팬 위 뜨거운 공기층
   for (let z = 0; z < NZ; z++) {
-    const tf = amb + (onPan ? (sim.panT - amb) * 0.35 * Math.exp(-((z + 0.5) * DZ) / 0.005) : 0);
+    const tf = inOven ? ovenT : amb + (onPan ? (sim.panT - amb) * 0.35 * Math.exp(-((z + 0.5) * DZ) / 0.005) : 0);
+    const h = inOven ? 22 : 16;
     for (const [x, inward] of [[0, 1], [NX - 1, -1]]) {
       const i = idx(x, z);
-      dE[i] += boundaryConductance(16, k[i], DZ, DX / 2) * (tf - T[i]);
-      evaporate(i, 16, DZ, inward);
+      dE[i] += boundaryConductance(h, k[i], DZ, DX / 2) * (tf - T[i]);
+      evaporate(i, inOven ? 14 : 16, DZ, inward);
     }
   }
   let boil = 0;
@@ -229,13 +237,8 @@ export function step(sim, dt) {
   sim.time += dt;
   if (sim.phase === 'cooking') {
     sim.cookTime += dt;
-    sim.faceTime[sim.face] += dt;
-  }
-  if (sim.phase === 'resting') {
-    sim.restTime += dt;
-    const c = coreTemp(sim);
-    if (c > sim.restCoreMax) sim.restCoreMax = c;
-    if ((sim.restTime > 150 && c < sim.restCoreMax - 0.3) || sim.restTime > 600) sim.phase = 'done';
+    sim.placeTime[sim.place] += dt;
+    if (onPan) sim.faceTime[sim.face] += dt;
   }
 }
 
@@ -249,14 +252,39 @@ export function advance(sim, seconds, dt = 0.2) {
   }
 }
 
-export function placeSteak(sim) {
-  if (sim.phase !== 'preheat') return;
-  sim.onPan = true;
-  sim.phase = 'cooking';
+// 고기를 도마·팬·오븐 사이로 옮긴다. 몇 번이든 오갈 수 있다 (리버스 시어링, 휴지 후 재시어링 등)
+export function moveTo(sim, place) {
+  if (sim.phase === 'done' || sim.place === place || !PLACES.includes(place)) return false;
+  sim.place = place;
+  sim.basting = false;
+  if (sim.phase === 'prep' && place !== 'board') sim.phase = 'cooking';
+  if (place === 'pan') sim.panVisits++;
+  if (sim.phase === 'cooking') sim.log.push({t: sim.cookTime, place});
+  return true;
+}
+export const placeSteak = (sim) => moveTo(sim, 'pan');
+export const removeToRest = (sim) => moveTo(sim, 'board');
+
+// 팬 밖에 있을 때만 자를 수 있다. 자르는 순간의 상태로 채점
+export function cut(sim) {
+  if (sim.phase !== 'cooking' || sim.place === 'pan') return false;
+  sim.phase = 'done';
+  sim.basting = false;
+  return true;
+}
+
+// 이동 기록을 [{place, from, to}] 구간으로 정리
+export function segments(sim) {
+  const out = [];
+  sim.log.forEach((e, i) => {
+    const to = i + 1 < sim.log.length ? sim.log[i + 1].t : sim.cookTime;
+    if (to > e.t) out.push({place: e.place, from: e.t, to});
+  });
+  return out;
 }
 
 export function flip(sim) {
-  if (sim.phase !== 'cooking') return;
+  if (sim.phase === 'done') return;
   for (const a of [sim.T, sim.W, sim.Tpeak, sim.B]) {
     for (let z = 0; z < NZ / 2; z++) {
       for (let x = 0; x < NX; x++) {
@@ -269,14 +297,6 @@ export function flip(sim) {
   }
   sim.face = 1 - sim.face;
   sim.flips++;
-}
-
-export function removeToRest(sim) {
-  if (sim.phase !== 'cooking') return;
-  sim.onPan = false;
-  sim.basting = false;
-  sim.phase = 'resting';
-  sim.restCoreMax = coreTemp(sim);
 }
 
 // 가운데 탐침 온도계 위치 (두께 중앙)
@@ -367,7 +387,9 @@ export function evaluate(sim, target) {
     lossPct,
     flips: sim.flips,
     cookTime: sim.cookTime,
-    restTime: sim.restTime,
+    placeTime: {...sim.placeTime},
+    panVisits: sim.panVisits,
+    segments: segments(sim),
     faceTime: [...sim.faceTime],
     profile: [...peak],
     verdict: verdict(score, core, target, faceB, band, sym),
