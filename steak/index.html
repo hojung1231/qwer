@@ -1,0 +1,151 @@
+<meta charset="utf-8">
+<title>이븐 스테이크</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1><span class="mark">EVEN</span> 이븐 스테이크</h1>
+      <p class="sub">두께 30mm 소고기 · 열전달 시뮬레이션</p>
+    </div>
+    <div class="chips" aria-live="polite">
+      <span class="chip" id="chipTarget">목표 미디엄 레어 56°C</span>
+      <span class="chip" id="chipPan">무쇠 팬</span>
+      <span class="chip chip-phase" id="chipPhase" data-phase="preheat">예열</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage" aria-label="조리대">
+      <div class="scene-wrap">
+        <canvas id="scene" width="800" height="520" aria-label="도마와 버너 위 팬"></canvas>
+        <div class="toast" id="toast" hidden></div>
+        <div class="clock" aria-label="조리 시간"><span id="clock">00:00</span><small id="clockLabel">예열</small></div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-head">
+          <div class="seg" role="tablist" aria-label="고기 보기">
+            <button type="button" id="viewSide" role="tab" aria-selected="true" data-view="side">옆면</button>
+            <button type="button" id="viewCut" role="tab" aria-selected="false" data-view="cut">단면 투시</button>
+            <button type="button" id="viewHeat" role="tab" aria-selected="false" data-view="heat">열화상</button>
+          </div>
+          <span class="hint" id="viewHint">옆면은 실제 요리사가 보는 정보입니다. 익은 띠가 아래에서 올라옵니다.</span>
+        </div>
+        <canvas id="section" width="800" height="200" aria-label="고기 단면"></canvas>
+        <div class="scale" id="scaleLegend"></div>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="계측">
+      <div class="gauges">
+        <div class="gauge"><span class="g-label">팬 (적외선)</span><span class="g-val" id="gPan">22°</span><span class="g-sub" id="gPanSub">상온</span></div>
+        <div class="gauge probe"><span class="g-label">중심 (탐침)</span><span class="g-val" id="gCore">4°</span><span class="g-sub" id="gCoreSub">목표까지 52°</span></div>
+        <div class="gauge"><span class="g-label">아랫면</span><span class="g-val" id="gBottom">4°</span><span class="g-sub" id="gBottomSub">면 A</span></div>
+        <div class="gauge"><span class="g-label">윗면</span><span class="g-val" id="gTop">4°</span><span class="g-sub" id="gTopSub">면 B</span></div>
+      </div>
+
+      <div class="faces">
+        <div class="face"><span>면 A 접촉</span><b id="faceA">0:00</b><i id="faceABar"></i></div>
+        <div class="face"><span>면 B 접촉</span><b id="faceB">0:00</b><i id="faceBBar"></i></div>
+        <div class="face"><span>뒤집기</span><b id="flipCount">0회</b></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head"><h2>두께 방향 온도</h2><span class="legend"><i class="l-now"></i>현재 <i class="l-peak"></i>최고</span></div>
+        <canvas id="profile" width="520" height="220" aria-label="두께별 온도 그래프"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head"><h2>중심 온도 기록</h2><span class="legend"><i class="l-core"></i>중심 <i class="l-target"></i>목표</span></div>
+        <canvas id="history" width="520" height="170" aria-label="중심 온도 시간 그래프"></canvas>
+      </div>
+      <p class="no-probe" id="noProbe" hidden>탐침 없이 굽는 중입니다. 옆면 색, 소리, 시간만 보고 판단하세요.</p>
+    </aside>
+  </main>
+
+  <div class="dock" role="group" aria-label="조작">
+    <div class="burner">
+      <label for="burner">불 세기 <b id="burnerVal">10</b></label>
+      <input type="range" id="burner" min="0" max="10" step="1" value="10">
+      <div class="ticks" aria-hidden="true"><span>끔</span><span>약</span><span>중</span><span>강</span></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="btnOil">기름 두르기</button>
+      <button type="button" class="btn primary" id="btnMain">고기 올리기 <kbd>Space</kbd></button>
+      <button type="button" class="btn" id="btnBaste" disabled>버터 베이스팅 <kbd>B</kbd></button>
+      <button type="button" class="btn warn" id="btnRest" disabled>꺼내서 레스팅</button>
+    </div>
+    <div class="speed">
+      <span class="speed-label">시간 배속</span>
+      <div class="seg" id="speedSeg" role="radiogroup" aria-label="시간 배속">
+        <button type="button" data-speed="1" role="radio" aria-checked="false">1×</button>
+        <button type="button" data-speed="2" role="radio" aria-checked="false">2×</button>
+        <button type="button" data-speed="4" role="radio" aria-checked="true">4×</button>
+        <button type="button" data-speed="8" role="radio" aria-checked="false">8×</button>
+        <button type="button" data-speed="16" role="radio" aria-checked="false">16×</button>
+      </div>
+      <button type="button" class="icon-btn" id="btnSound" aria-pressed="true" title="소리">소리 켬</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="setup">
+  <form class="sheet" id="setupForm">
+    <h2>오늘의 스테이크</h2>
+    <p class="lead">두께 3cm 소고기 한 덩이(10 × 12cm, 약 400g). 팬을 예열하고 원하는 굽기에 맞춰 뒤집어 가며 구운 뒤 레스팅까지 마치면 단면을 잘라 채점합니다.</p>
+    <fieldset>
+      <legend>목표 굽기 (레스팅 후 중심 온도)</legend>
+      <div class="pick" id="pickDone"></div>
+    </fieldset>
+    <fieldset>
+      <legend>팬</legend>
+      <div class="pick" id="pickPan"></div>
+    </fieldset>
+    <div class="row2">
+      <fieldset>
+        <legend>고기 시작 온도</legend>
+        <div class="pick small" id="pickStart">
+          <label><input type="radio" name="start" id="start4" value="4" checked><span>냉장 4°C</span></label>
+          <label><input type="radio" name="start" id="start18" value="18"><span>실온 템퍼링 18°C</span></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>도구</legend>
+        <div class="pick small">
+          <label><input type="checkbox" id="optProbe" checked><span>탐침 온도계 사용</span></label>
+        </div>
+      </fieldset>
+    </div>
+    <p class="tip">3cm 두께는 레스팅 중 잔열로 중심이 5~8°C 더 오릅니다. 목표보다 일찍 내리세요.</p>
+    <button type="submit" class="btn primary big" id="btnStart">불 켜고 시작</button>
+  </form>
+</div>
+
+<div class="overlay" id="result" hidden>
+  <div class="sheet wide">
+    <div class="res-head">
+      <div>
+        <p class="eyebrow" id="resTarget">미디엄 레어 목표</p>
+        <h2 id="resVerdict">완벽합니다.</h2>
+      </div>
+      <div class="score"><span id="resScore">0</span><small>/ 100</small></div>
+    </div>
+    <canvas id="resCut" width="900" height="300" aria-label="자른 단면"></canvas>
+    <div class="res-grid">
+      <ul class="bars" id="resBars"></ul>
+      <div class="res-side">
+        <canvas id="resProfile" width="420" height="220" aria-label="두께별 최고 온도"></canvas>
+        <dl class="stats" id="resStats"></dl>
+      </div>
+    </div>
+    <div class="res-actions">
+      <button type="button" class="btn primary big" id="btnAgain">다시 굽기</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="game.js"></script>
