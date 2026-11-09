@@ -22,7 +22,7 @@
   <main class="layout">
     <section class="stage" aria-label="조리대">
       <div class="scene-wrap">
-        <canvas id="scene" width="800" height="520" aria-label="도마, 오븐, 버너 위 팬"></canvas>
+        <canvas id="scene" width="800" height="520" aria-label="도마와 버너 위 팬"></canvas>
         <div class="toast" id="toast" hidden></div>
         <div class="clock" aria-label="조리 시간"><span id="clock">00:00</span><small id="clockLabel">예열</small></div>
       </div>
@@ -74,18 +74,12 @@
         <input type="range" id="burner" min="0" max="10" step="1" value="10">
         <div class="ticks" aria-hidden="true"><span>끔</span><span>약</span><span>중</span><span>강</span></div>
       </div>
-      <div class="burner oven">
-        <label for="oven">오븐 <b id="ovenVal">120°</b></label>
-        <input type="range" id="oven" min="60" max="250" step="10" value="120">
-        <div class="ticks" aria-hidden="true"><span>60°</span><span>150°</span><span>250°</span></div>
-      </div>
     </div>
     <div class="place">
       <span class="dock-label">고기 위치</span>
       <div class="seg place-seg" id="placeSeg" role="radiogroup" aria-label="고기 위치">
         <button type="button" data-place="board" role="radio" aria-checked="true">도마 <kbd>R</kbd></button>
         <button type="button" data-place="pan" role="radio" aria-checked="false">팬 <kbd>P</kbd></button>
-        <button type="button" data-place="oven" role="radio" aria-checked="false">오븐 <kbd>O</kbd></button>
       </div>
     </div>
     <div class="actions">
@@ -111,7 +105,7 @@
 <div class="overlay" id="setup">
   <form class="sheet" id="setupForm">
     <h2>오늘의 스테이크</h2>
-    <p class="lead">두께 3cm 소고기 한 덩이(10 × 12cm, 약 400g). 도마, 팬, 오븐 사이를 몇 번이든 오가며 구울 수 있습니다. 팬에서 바로 굽든, 오븐에서 천천히 데운 뒤 팬에 시어링하든(리버스 시어링), 굽고 쉬고 다시 굽든 자유입니다. 다 됐다 싶으면 도마나 오븐에서 꺼낸 상태로 잘라 채점합니다.</p>
+    <p class="lead">두께 3cm 소고기 한 덩이(10 × 12cm, 약 400g). 팬과 도마 사이를 몇 번이든 오갈 수 있습니다. 한 번에 끝까지 구워도 되고, 짧게 굽고 도마에서 쉬기를 여러 번 반복하는 그릴 수비드로 안쪽을 고르게 익혀도 됩니다. 다 됐다 싶으면 도마 위에서 잘라 채점합니다.</p>
     <fieldset>
       <legend>목표 굽기 (레스팅 후 중심 온도)</legend>
       <div class="pick" id="pickDone"></div>
@@ -135,7 +129,7 @@
         </div>
       </fieldset>
     </div>
-    <p class="tip">3cm 두께는 센 불에서 내린 뒤 잔열로 중심이 5~8°C 더 오릅니다. 리버스 시어링은 오븐 100~150°C 에서 중심을 목표보다 약 10°C 낮게 올린 뒤, 아주 뜨거운 팬에 짧게 굽습니다. 오븐은 이미 예열돼 있습니다.</p>
+    <p class="tip">그릴 수비드: 센 팬에서 짧게 양면을 굽고 도마에서 쉬게 하면 겉은 식고 잔열만 안으로 들어갑니다. 이걸 반복하면서 불을 점점 줄이면 겉 아래 회색 띠가 거의 생기지 않습니다. 대신 처음 몇 번을 세게 구워야 크러스트가 생깁니다.</p>
     <button type="submit" class="btn primary big" id="btnStart">불 켜고 시작</button>
   </form>
 </div>
@@ -152,7 +146,7 @@
     <canvas id="resCut" width="900" height="300" aria-label="자른 단면"></canvas>
     <div class="timeline">
       <div class="timeline-bar" id="resTimeline"></div>
-      <div class="timeline-key"><span><i class="tl-pan"></i>팬</span><span><i class="tl-oven"></i>오븐</span><span><i class="tl-board"></i>도마 (휴지)</span></div>
+      <div class="timeline-key"><span><i class="tl-pan"></i>팬</span><span><i class="tl-board"></i>도마 (휴지)</span></div>
     </div>
     <div class="res-grid">
       <ul class="bars" id="resBars"></ul>

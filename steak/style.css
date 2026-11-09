@@ -211,10 +211,8 @@ kbd {
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px;
   z-index: 5;
 }
-.dials { display: flex; gap: 16px; flex: 1 1 320px; max-width: 460px; }
+.dials { display: flex; gap: 16px; flex: 1 1 220px; max-width: 340px; }
 .burner { display: grid; gap: 2px; flex: 1 1 0; min-width: 0; }
-.burner.oven label b { color: var(--warn); }
-.burner.oven input { accent-color: var(--warn); }
 .place { display: flex; align-items: center; gap: 8px; }
 .place-seg button[aria-checked="true"] { background: var(--heat); color: #fff; }
 .place-seg button:disabled { opacity: .4; }
@@ -312,7 +310,6 @@ legend { font-size: 13px; font-weight: 700; padding: 0; margin-bottom: 6px; lett
 .timeline-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
 .timeline-bar span { min-width: 2px; font-size: 11px; color: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; }
 .tl-pan { background: var(--heat); }
-.tl-oven { background: var(--warn); }
 .tl-board { background: var(--muted); }
 .timeline-key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
 .timeline-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }

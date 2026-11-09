@@ -26,7 +26,7 @@ const PAN_AREA = Math.PI * 0.13 * 0.13; // 지름 26cm
 const STEAK_AREA = NX * DX * DEPTH;
 const BURNER_MAX = 900; // 팬에 실제로 들어가는 최대 열량 (가스 약 2.7kW × 효율 1/3)
 export const OIL_SMOKE = 230;
-export const PLACES = ['board', 'pan', 'oven']; // 도마(휴지), 팬, 오븐 선반
+export const PLACES = ['board', 'pan']; // 도마(휴지), 팬
 
 export const PANS = {
   castiron: {name: '무쇠 팬', note: '열용량이 커서 고기를 올려도 온도가 덜 떨어짐. 예열이 느림', mass: 3.0, c: 460, eps: 0.65, maxSafe: Infinity},
@@ -75,12 +75,11 @@ export function createSim({pan = 'castiron', startTemp = 4, ambient = T_AMB} = {
     level: 0,
     oil: false,
     basting: false,
-    ovenT: 120,
     place: 'board',
-    phase: 'prep', // prep(도마 위 생고기) → cooking(팬·오븐·도마를 자유롭게 오감) → done(자름)
+    phase: 'prep', // prep(도마 위 생고기) → cooking(팬과 도마를 자유롭게 오감) → done(자름)
     time: 0,
     cookTime: 0,
-    placeTime: {board: 0, pan: 0, oven: 0},
+    placeTime: {board: 0, pan: 0},
     panVisits: 0,
     log: [], // [{t, place}] 처음 불에 올린 뒤의 이동 기록
     flips: 0,
@@ -109,8 +108,6 @@ export function step(sim, dt) {
   const pan = PANS[sim.panType];
   const amb = sim.ambient;
   const onPan = sim.place === 'pan';
-  const inOven = sim.place === 'oven';
-  const ovenT = sim.ovenT;
   for (let i = 0; i < n; i++) {
     const w = W[i];
     k[i] = 0.12 + 0.36 * Math.min(w, W0) / W0;
@@ -138,38 +135,33 @@ export function step(sim, dt) {
   let evapRate = 0; // kg/s/m
   // 표면 증발. 마른 크러스트는 안쪽 젖은 층의 수분이 크러스트를 통해 천천히 빠져나간다고 본다
   const evaporate = (i, h, area, inward) => {
+    const drive = rhoVapor(T[i]) - RHO_V_AMB;
+    if (drive <= 0) return;
     let src = i, f = 1;
     if (W[i] <= W_RES) {
       src = i + inward;
       f = 0.35;
       if (W[src] <= W_RES) return;
     }
-    const drive = rhoVapor(T[i]) - RHO_V_AMB;
-    if (drive <= 0) return;
     const mdot = Math.min((h / 1400) * f * drive * area, ((W[src] - W_RES) * V) / dt);
     W[src] -= (mdot * dt) / V;
     dE[i] -= mdot * LV;
     evapRate += mdot;
   };
-  // 아랫면: 팬 접촉 또는 식힘망
+  // 아랫면: 팬 접촉 또는 도마
   for (let x = 0; x < NX; x++) {
     const i = idx(x, 0);
-    let h, tf;
     if (onPan) {
       const wet = Math.max(0, Math.min(1, (W[i] - W_RES) / (0.6 * W0 - W_RES)));
-      h = (sim.oil ? 520 : 330) * (0.35 + 0.65 * wet); // 표면이 마르면 접촉이 줄어듦
-      tf = sim.panT;
-    } else if (inOven) {
-      h = 20; // 오븐 선반: 대류 + 벽 복사
-      tf = ovenT;
+      const h = (sim.oil ? 520 : 330) * (0.35 + 0.65 * wet); // 표면이 마르면 접촉이 줄어듦
+      const q = boundaryConductance(h, k[i], DX, DZ / 2) * (sim.panT - T[i]);
+      dE[i] += q;
+      panFlux += q;
     } else {
-      h = 22; // 도마로 빠지는 열 + 공기
-      tf = amb;
+      const q = boundaryConductance(22, k[i], DX, DZ / 2) * (amb - T[i]); // 도마로 빠지는 열 + 공기
+      dE[i] += q;
+      evaporate(i, 8, DX, NX);
     }
-    const q = boundaryConductance(h, k[i], DX, DZ / 2) * (tf - T[i]);
-    dE[i] += q;
-    if (onPan) panFlux += q;
-    else evaporate(i, inOven ? 14 : 8, DX, NX);
   }
   // 윗면: 공기 또는 버터 베이스팅
   for (let x = 0; x < NX; x++) {
@@ -180,20 +172,20 @@ export function step(sim, dt) {
       dE[i] += q;
       panFlux += q;
     } else {
-      const tf = inOven ? ovenT : amb + (onPan ? (sim.panT - amb) * 0.06 : 0);
-      const h = inOven ? 22 : onPan ? 12 : 16; // 자연대류 + 복사
-      dE[i] += boundaryConductance(h, k[i], DX, DZ / 2) * (tf - T[i]);
-      evaporate(i, inOven ? 14 : h, DX, -NX);
+      const tf = amb + (onPan ? (sim.panT - amb) * 0.06 : 0);
+      const h = onPan ? 12 : 16; // 자연대류 + 복사
+      const q = boundaryConductance(h, k[i], DX, DZ / 2) * (tf - T[i]);
+      dE[i] += q;
+      evaporate(i, h, DX, -NX);
     }
   }
   // 옆면: 팬 위 뜨거운 공기층
   for (let z = 0; z < NZ; z++) {
-    const tf = inOven ? ovenT : amb + (onPan ? (sim.panT - amb) * 0.35 * Math.exp(-((z + 0.5) * DZ) / 0.005) : 0);
-    const h = inOven ? 22 : 16;
+    const tf = amb + (onPan ? (sim.panT - amb) * 0.35 * Math.exp(-((z + 0.5) * DZ) / 0.005) : 0);
     for (const [x, inward] of [[0, 1], [NX - 1, -1]]) {
       const i = idx(x, z);
-      dE[i] += boundaryConductance(h, k[i], DZ, DX / 2) * (tf - T[i]);
-      evaporate(i, inOven ? 14 : 16, DZ, inward);
+      dE[i] += boundaryConductance(16, k[i], DZ, DX / 2) * (tf - T[i]);
+      evaporate(i, 16, DZ, inward);
     }
   }
   let boil = 0;
@@ -232,7 +224,7 @@ export function step(sim, dt) {
   sim.panToMeat = panFlux * DEPTH;
   const sizz = onPan ? (boil * DEPTH) / dt + (juice > 0 ? (drip * DEPTH) / dt : 0) : 0;
   sim.sizzle += (sizz - sim.sizzle) * Math.min(1, dt * 2);
-  sim.steam += ((boil * DEPTH + evapRate * dt * DEPTH) / dt - sim.steam) * Math.min(1, dt * 2);
+  sim.steam += ((boil * DEPTH) / dt + evapRate * DEPTH - sim.steam) * Math.min(1, dt * 2);
 
   sim.time += dt;
   if (sim.phase === 'cooking') {
@@ -252,7 +244,8 @@ export function advance(sim, seconds, dt = 0.2) {
   }
 }
 
-// 고기를 도마·팬·오븐 사이로 옮긴다. 몇 번이든 오갈 수 있다 (리버스 시어링, 휴지 후 재시어링 등)
+// 고기를 도마와 팬 사이로 옮긴다. 몇 번이든 오갈 수 있다.
+// 그릴 수비드: 짧게 시어링하고 도마에서 쉬기를 반복해, 겉은 식히고 잔열로 안쪽만 천천히 익힌다
 export function moveTo(sim, place) {
   if (sim.phase === 'done' || sim.place === place || !PLACES.includes(place)) return false;
   sim.place = place;
@@ -335,6 +328,8 @@ export function warnings(sim) {
   return w;
 }
 
+export const grayThreshold = (target) => Math.max(68, target + 6);
+
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const ramp = (v, full, zero) => clamp01((zero - v) / (zero - full));
 
@@ -354,7 +349,9 @@ export function evaluate(sim, target) {
   let core = Infinity;
   for (let z = crustBottom; z < NZ - crustTop; z++) core = Math.min(core, peak[z]);
   let band = 0;
-  for (let z = crustBottom; z < NZ - crustTop; z++) if (peak[z] > target + 5) band++;
+  // 회색 띠: 미오글로빈이 다 변성돼 분홍기가 사라진 층 (최고 온도 68°C 이상, 목표가 높으면 목표 +6°C)
+  const grayT = grayThreshold(target);
+  for (let z = crustBottom; z < NZ - crustTop; z++) if (peak[z] > grayT) band++;
   let sym = 0;
   for (let z = 0; z < NZ / 2; z++) sym += Math.abs(peak[z] - peak[NZ - 1 - z]);
   sym /= NZ / 2;
@@ -367,8 +364,8 @@ export function evaluate(sim, target) {
   const totalMass0 = sim.water0 + SOLIDS * NX * NZ * V * DEPTH;
   const lossPct = ((sim.water0 - water1) / totalMass0) * 100;
   const parts = {
-    core: Math.round(40 * ramp(Math.abs(core - target), 1.5, 10)),
-    band: Math.round(15 * ramp(band, 8, 20)),
+    core: Math.round(35 * ramp(Math.abs(core - target), 1.5, 10)),
+    band: Math.round(20 * ramp(band, 2, 10)),
     symmetry: Math.round(10 * ramp(sym, 2, 12)),
     crustA: Math.round(10 * crustScore(faceB[0])),
     crustB: Math.round(10 * crustScore(faceB[1])),
@@ -381,6 +378,7 @@ export function evaluate(sim, target) {
     core,
     target,
     bandMm: band * DZ * 1000,
+    grayT,
     symmetry: sym,
     crustMm: [crustBottom, crustTop],
     browning: faceB,
@@ -403,7 +401,7 @@ function verdict(score, core, target, faceB, band, sym) {
   if (sym > 8) return '한쪽 면만 오래 익었어요. 이븐하게 익지 않았어요.';
   if (core > target + 4) return '목표보다 더 익었습니다. 잔열까지 계산해서 일찍 내리세요.';
   if (core < target - 4) return '덜 익었습니다. 조금 더 굽거나 레스팅을 충분히 하세요.';
-  if (band > 12) return '겉이 회색으로 두껍게 익었어요. 불을 줄이고 자주 뒤집어 보세요.';
-  if (Math.min(...faceB) < 1) return '크러스트가 약합니다. 팬을 더 달구세요.';
+  if (band > 6) return '회색 띠가 두껍습니다. 짧게 굽고 쉬기를 반복하며 불을 점점 줄여 보세요.';
+  if (Math.min(...faceB) < 1) return '크러스트가 약합니다. 처음 몇 번은 센 불로 겉부터 잡으세요.';
   return '좋습니다. 조금만 다듬으면 완벽해요.';
 }

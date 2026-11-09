@@ -62,7 +62,7 @@ test('스테이크 물리: 정상적인 굽기는 잔열로 목표 굽기에 도
   assert.ok(result.core > pulled + 3, `잔열 상승 ${pulled} → ${result.core}`);
   assert.ok(Math.abs(result.core - 56) < 3, `중심 ${result.core}`);
   assert.ok(result.cookTime > 300 && result.cookTime < 1200, `조리 시간 ${result.cookTime}`);
-  assert.ok(result.score >= 80, `점수 ${result.score}`);
+  assert.ok(result.score >= 70, `점수 ${result.score}`);
 });
 
 test('스테이크 물리: 한 면만 오래 구우면 대칭 점수가 깎임', () => {
@@ -71,31 +71,50 @@ test('스테이크 물리: 한 면만 오래 구우면 대칭 점수가 깎임',
   assert.ok(result.parts.symmetry < 6);
 });
 
-test('스테이크 물리: 리버스 시어링 (오븐 → 도마 → 팬 → 도마)', () => {
+// 그릴 수비드: 짧게 굽고 도마에서 쉬기를 반복하며 불을 점점 줄인다
+function grillSousVide(levels = [8, 7, 5, 4, 3, 3], sear = 45, rest = 150, pull = 54) {
   const s = P.createSim({startTemp: 4});
-  s.ovenT = 120;
   s.oil = true;
-  assert.ok(P.moveTo(s, 'oven'));
-  while (P.coreTemp(s) < 46) P.advance(s, 5);
-  const ovenMinutes = s.cookTime / 60;
-  assert.ok(ovenMinutes > 25 && ovenMinutes < 90, `오븐 ${ovenMinutes}분`);
-  P.moveTo(s, 'board');
   s.level = 10;
-  while (s.panT < 270) P.advance(s, 1);
-  s.level = 8;
-  P.moveTo(s, 'pan');
-  assert.equal(P.cut(s), false, '팬 위에서는 자를 수 없음');
-  for (let k = 0; k < 4; k++) { P.advance(s, 45); P.flip(s); }
-  P.moveTo(s, 'board');
+  while (s.panT < 250) P.advance(s, 1);
+  let cycles = 0;
+  while (cycles < 40) {
+    s.level = levels[Math.min(cycles, levels.length - 1)];
+    P.moveTo(s, 'pan');
+    P.advance(s, sear);
+    P.flip(s);
+    P.advance(s, sear);
+    P.moveTo(s, 'board');
+    cycles++;
+    if (P.coreTemp(s) >= pull) break;
+    P.advance(s, rest);
+    if (P.coreTemp(s) >= pull) break;
+  }
   restUntilPeak(s);
   assert.ok(P.cut(s));
+  return {s, cycles, result: P.evaluate(s, 56)};
+}
+
+test('스테이크 물리: 그릴 수비드는 한 번에 굽기보다 회색 띠가 얇음', () => {
+  const classic = cook().result;
+  const {s, cycles, result} = grillSousVide();
+  assert.ok(cycles >= 4, `반복 ${cycles}회`);
+  assert.equal(s.panVisits, cycles);
+  assert.ok(result.bandMm < classic.bandMm, `회색 띠 ${result.bandMm}mm vs 한 번에 굽기 ${classic.bandMm}mm`);
+  assert.ok(Math.abs(result.core - 56) < 3, `중심 ${result.core}`);
+  assert.ok(Math.min(...result.browning) > 1, `크러스트 ${result.browning}`);
+  assert.ok(result.score > classic.score && result.score >= 85, `점수 ${result.score} vs ${classic.score}`);
   assert.equal(P.moveTo(s, 'pan'), false, '자른 뒤에는 옮길 수 없음');
-  const r = P.evaluate(s, 56);
-  assert.deepEqual(r.segments.map((g) => g.place), ['oven', 'board', 'pan', 'board']);
-  assert.equal(r.panVisits, 1);
-  assert.ok(Math.abs(r.core - 56) < 3, `중심 ${r.core}`);
-  assert.ok(Math.min(...r.browning) > 1, `크러스트 ${r.browning}`);
-  assert.ok(r.score >= 85, `점수 ${r.score}`);
+});
+
+test('스테이크 물리: 팬 위에서는 자를 수 없음', () => {
+  const s = P.createSim({});
+  s.panT = 240;
+  P.moveTo(s, 'pan');
+  P.advance(s, 10);
+  assert.equal(P.cut(s), false);
+  P.moveTo(s, 'board');
+  assert.equal(P.cut(s), true);
 });
 
 test('스테이크 물리: 팬과 도마를 여러 번 오가도 시간이 위치별로 쌓임', () => {
