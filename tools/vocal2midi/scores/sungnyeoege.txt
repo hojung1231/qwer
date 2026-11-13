@@ -1,0 +1,21 @@
+# 변진섭 - 숙녀에게 : lead-sheet melody, measures 10-25 (read from the score image).
+# Key D major, 12/8, dotted quarter = 70.  LEN is in 8th notes, 12 per bar.
+# Same token format as cheonghon.txt.  Pitches as notated; a male voice sounds an octave lower.
+@div 3
+@bar 12
+10: r:10 D4:1 E4:1
+11: F#4:3 r:1 E4:1 D4:1 E4:2 A4:1 ~A4:3
+12: A4:1 A4:1 A4:1 A4:1 G4:1 F#4:1 G4:3 r:3
+13: G4:1 G4:1 G4:1 G4:1 A4:1 Bb4:1 A4:2 F#4:1 D4:3
+14: D4:1 D4:1 D4:1 D4:1 C#4:1 D4:1 E4:3 r:1 D4:1 E4:1
+15: F#4:3 r:1 E4:1 D4:1 E4:2 A4:1 ~A4:3
+16: A4:1 A4:1 A4:1 A4:1 G4:1 F#4:1 G4:3 r:3
+17: G4:1 G4:1 G4:1 G4:1 F#4:1 E4:1 F#4:2 A4:1 D4:3
+18: D4:1 D4:1 D4:1 E4:1 D4:1 C#4:1 D4:3 r:1 D5:1 C#5:1
+19: B4:3 r:1 E5:1 D5:1 C#5:2 A4:1 ~A4:2 F#4:1
+20: G4:1 A4:1 B4:1 B4:1 ~B4|C#5:1 D5:1 A4:3 r:1 D5:1 C#5:1
+21: B4:3 r:1 E5:1 D5:1 C#5:2 A4:1 A4:2 A4:1
+22: B4:1 B4:1 B4:1 ~B4:2 r:1 B4:1 B4:1 B4:1 B4:1 C#5:2
+23: D5:2 E5:1 ~E5:5 r:1 A4:1 D5:1 E5:1
+24: F#5:2 A4:1 ~A4:2 F#5:1 F#5:2 E5:1 E5:1 D5:1 C#5:1
+25: E5:2 E5:1 E5:1 D5:1 C#5:1 D5:3 B4:1 E5:1 F#5:1

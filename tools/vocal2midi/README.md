@@ -6,10 +6,11 @@
 
 ```bash
 pip install librosa soundfile mido torchcrepe demucs   # ffmpeg 필요
-python3 vocal2midi.py 노래.mp3 -o out --bpm-hint 70 --key E --reference reference_score.txt
+python3 vocal2midi.py 노래.mp3 -o out --bpm-hint 70 --key E --reference scores/cheonghon.txt
 ```
 
 `--bpm-hint`, `--key`, `--reference`는 선택입니다(없으면 템포·조성을 추정하고 평가는 생략).
+6/8·12/8 같은 겹박자는 `--div 3`(한 박을 8분음표 3칸으로)을 주거나, 정답 파일에 `@div 3`, `@bar 12`를 적습니다.
 
 출력(`out/`)
 
@@ -43,7 +44,7 @@ python3 vocal2midi.py 노래.mp3 -o out --bpm-hint 70 --key E --reference refere
 
 ## 평가 (`score.py`)
 
-`reference_score.txt`는 악보 이미지의 1절(7~24마디)을 손으로 옮긴 것입니다. 추출 결과 위로 악보를
+`scores/*.txt`는 악보 이미지를 손으로 옮긴 정답 파일입니다(`cheonghon.txt`는 1절 7~24마디). 추출 결과 위로 악보를
 밀어 가며 가장 잘 맞는 위치·옥타브를 찾고, 16분음표 칸 단위 일치율과 음표 단위 F1을 냅니다.
 `?`가 붙은 마디(11~14)는 악보에 1·2절 성부가 겹쳐 인쇄돼 판독이 불확실해 별도 수치로 분리합니다.
 
@@ -62,7 +63,20 @@ python3 vocal2midi.py 노래.mp3 -o out --bpm-hint 70 --key E --reference refere
 조정에 직접 쓰지 않은 2절(약 111초 지점, 같은 정답 파일로 채점)에서는 Demucs 기준 전체 76%,
 앞뒤 1칸 허용 87%입니다. 2절은 가사와 일부 음이 달라 정답 자체도 덜 정확합니다.
 
-남은 오차의 원인(분석 결과)
+### 「숙녀에게」 결과 (변진섭, 12/8, D장조 — 설정을 조정하지 않은 검증 곡)
+
+`scores/sungnyeoege.txt`(10~25마디), Demucs 분리. 「청혼」에서 정한 설정 그대로 돌린 결과입니다.
+
+| 지표 | 값 |
+|---|---|
+| 음고 일치(8분음표 칸 단위, 16마디) | 87% |
+| 앞뒤 1칸 허용 | 92% |
+| 음표/쉼표 구분 일치 | 93% |
+| 음표 단위 F1 (정밀도 0.92 / 재현율 0.70) | 0.79 |
+
+재현율이 낮은 이유는 같은 음이 반복될 때(예: 라-라-라) 한 음표로 합쳐지기 때문입니다.
+
+남은 오차의 원인(「청혼」 분석 결과)
 
 - 가수가 악보보다 음을 일찍 끊거나 길게 끄는 구간, 박자를 밀고 당기는 구간.
 - "You don't have to cry", "I will make you smile"처럼 다른 멤버가 겹쳐 부르는 구절:

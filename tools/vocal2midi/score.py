@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import numpy as np
 
+META_DEFAULT = {"div": 4, "bar": 16}
 _PC = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 
@@ -15,9 +16,13 @@ def load_reference(path):
     """Returns (first_measure, slots, onsets): slots[i] = frozenset of accepted MIDI pitches
     for 16th-slot i (empty set = rest); onsets[i] = True where a new note is attacked."""
     slots, onsets, first, sure = [], [], None, []
+    meta = dict(META_DEFAULT)
     for line in open(path, encoding="utf-8"):
         line = line.split("#", 1)[0] if line.lstrip().startswith("#") else line
         if not line.strip():
+            continue
+        if line.startswith("@"):                      # "@div 3" = slots per beat, "@bar 12" = slots per bar
+            k, v = line[1:].split(); meta[k] = int(v)
             continue
         meas, body = line.split(":", 1)
         unsure = meas.strip().startswith("?")
@@ -29,7 +34,7 @@ def load_reference(path):
             ps = frozenset() if p == "r" else frozenset(name_to_midi(x) for x in p.split("|"))
             for k in range(int(n)):
                 slots.append(ps); onsets.append(bool(ps) and k == 0 and not tied); sure.append(not unsure)
-    return first, slots, np.array(onsets), np.array(sure)
+    return first, slots, np.array(onsets), np.array(sure), meta
 
 
 def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None, sure=None):
@@ -90,11 +95,11 @@ def midi_name(p):
     return ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"][p % 12] + str(p // 12 - 1)
 
 
-def side_by_side(pred_slots, ref_slots, off, octv, first_measure):
+def side_by_side(pred_slots, ref_slots, off, octv, first_measure, bar=16):
     out = []
-    for b in range(len(ref_slots) // 16):
-        r = ref_slots[b * 16:(b + 1) * 16]
-        p = pred_slots[off + b * 16: off + (b + 1) * 16]
+    for b in range(len(ref_slots) // bar):
+        r = ref_slots[b * bar:(b + 1) * bar]
+        p = pred_slots[off + b * bar: off + (b + 1) * bar]
         rs = " ".join((midi_name(min(s)) if s else "--").ljust(3) for s in r)
         ps = " ".join((midi_name(x - octv) if x >= 0 else "--").ljust(3) for x in p)
         mk = " ".join(("   " if ((x - octv) in s if s else x < 0) else "^^^") for s, x in zip(r, p))

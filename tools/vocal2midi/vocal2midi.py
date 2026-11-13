@@ -15,13 +15,19 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import isolate, pitch, notes as N, score as S
 
 
-def write_midi(path, notes, bpm, t_origin=0.0, transpose=0, program=52):
-    """Tempo-mapped single-track MIDI; time 0 of the file = t_origin seconds of the audio."""
+def write_midi(path, notes, bpm, t_origin=0.0, transpose=0, program=52, div=4, bar=16):
+    """Tempo-mapped single-track MIDI; time 0 of the file = t_origin seconds of the audio.
+    bpm counts the tracked beat; in compound time (div=3) that beat is a dotted quarter."""
     tpb = 480
+    if div % 3 == 0:                 # 6/8, 9/8, 12/8: beat = dotted quarter = 1.5 MIDI quarters
+        bpm = bpm * 1.5
+        sig = (bar // (div // 3), 8)
+    else:
+        sig = (bar // div, 4)
     mid = mido.MidiFile(ticks_per_beat=tpb)
     tr = mido.MidiTrack(); mid.tracks.append(tr)
     tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
-    tr.append(mido.MetaMessage("time_signature", numerator=4, denominator=4, time=0))
+    tr.append(mido.MetaMessage("time_signature", numerator=sig[0], denominator=sig[1], time=0))
     tr.append(mido.Message("program_change", program=program, time=0))
     ev = []
     for n in notes:
@@ -45,6 +51,8 @@ def main():
     ap.add_argument("--separator", choices=["auto", "demucs", "center"], default="auto")
     ap.add_argument("--bpm-hint", type=float, default=None, help="tempo printed on the score, if known")
     ap.add_argument("--key", default=None, help="tonic of the major key, e.g. E (default: estimated)")
+    ap.add_argument("--div", type=int, default=None,
+                    help="grid slots per beat: 4 = 16ths in simple time (default), 3 = 8ths in 6/8, 12/8")
     ap.add_argument("--transpose", type=int, default=0,
                     help="semitones added on output (12 = write a male voice at lead-sheet octave)")
     ap.add_argument("--reference", default=None, help="reference score file to evaluate against")
@@ -82,34 +90,41 @@ def main():
     v16 = librosa.resample(vocal, orig_sr=sr, target_sr=16000)
     oenv = librosa.onset.onset_strength(y=v16, sr=16000, hop_length=160)
     oth = float(np.percentile(oenv, 90))
-    lag = N.grid_lag(lab, t0, period)
-    qnotes, slots = N.quantise(lab, t0 + lag, period, oenv, onset_thresh=oth)
+    meta = dict(S.META_DEFAULT)
+    if a.reference:
+        first, ref_slots, ref_on, sure, meta = S.load_reference(a.reference)
+    if a.div:
+        meta["div"] = a.div; meta["bar"] = 4 * a.div
+    div, bar = meta["div"], meta["bar"]
+    lag = N.grid_lag(lab, t0, period, div=div)
+    # in-phrase gaps of up to 3/4 beat are returned to the preceding note
+    qnotes, slots = N.quantise(lab, t0 + lag, period, oenv, div=div, onset_thresh=oth,
+                               legato_slots=max(1, int(0.75 * div)))
 
     info = {"separator": sep, "tuning_cents": round(100 * tune, 1), "key": N.NAMES[tonic] + " major",
-            "bpm": round(bpm, 3), "first_beat_s": round(t0, 4), "vocal_lag_ms": round(1000 * lag),
+            "bpm": round(bpm, 3), "slots_per_beat": div, "first_beat_s": round(t0, 4), "vocal_lag_ms": round(1000 * lag),
             "raw_notes": len(raw_notes), "quantised_notes": len(qnotes)}
 
     origin = t0 + lag                      # MIDI time 0; a beat, but the bar phase is unknown...
     octv = 0
     if a.reference:
-        first, ref_slots, ref_on, sure = S.load_reference(a.reference)
         pred_on = np.zeros(len(slots), bool)
         for n in qnotes:
             pred_on[n.slot] = True
         ev = S.evaluate(slots, ref_slots, ref_on, pred_on, sure=sure)
         info["evaluation"] = {k: (v if isinstance(v, (int, list)) else round(float(v), 4)) for k, v in ev.items()}
         off, octv = ev["slot_offset"], ev["octave_shift"]
-        info["evaluation"]["excerpt_starts_s"] = round(t0 + lag + off * period / 4, 3)
+        info["evaluation"]["excerpt_starts_s"] = round(t0 + lag + off * period / div, 3)
         # ...unless the score tells us where its first bar sits: put bar 1 of the score on bar 1 of the MIDI
-        bar1 = off - (first - 1) * 16
-        origin = t0 + lag + (bar1 % 16 - (16 if bar1 % 16 else 0) if bar1 < 0 else bar1) * period / 4
+        bar1 = off - (first - 1) * bar
+        origin = t0 + lag + (bar1 % bar - (bar if bar1 % bar else 0) if bar1 < 0 else bar1) * period / div
         with open(os.path.join(a.out, "comparison.txt"), "w", encoding="utf-8") as f:
-            f.write(S.side_by_side(slots, ref_slots, off, octv, first) + "\n")
+            f.write(S.side_by_side(slots, ref_slots, off, octv, first, bar) + "\n")
     info["midi_origin_s"] = round(origin, 3)
-    write_midi(os.path.join(a.out, "melody_raw.mid"), raw_notes, bpm, origin, a.transpose)
-    write_midi(os.path.join(a.out, "melody_quantised.mid"), qnotes, bpm, origin, a.transpose)
+    write_midi(os.path.join(a.out, "melody_raw.mid"), raw_notes, bpm, origin, a.transpose, div=div, bar=bar)
+    write_midi(os.path.join(a.out, "melody_quantised.mid"), qnotes, bpm, origin, a.transpose, div=div, bar=bar)
     if octv:
-        write_midi(os.path.join(a.out, "melody_quantised_score_octave.mid"), qnotes, bpm, origin, -octv)
+        write_midi(os.path.join(a.out, "melody_quantised_score_octave.mid"), qnotes, bpm, origin, -octv, div=div, bar=bar)
     with open(os.path.join(a.out, "report.json"), "w") as f:
         json.dump(info, f, indent=2, ensure_ascii=False)
     print(json.dumps(info, indent=2, ensure_ascii=False))
