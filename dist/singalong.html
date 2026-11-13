@@ -97,9 +97,9 @@ summary{cursor:pointer;color:var(--muted);padding:4px 0}
   <summary>설정</summary>
   <div class="row"><label>키 조절</label><div class="step"><button id="keyDn" type="button">−</button><output id="keyOut">0</output><button id="keyUp" type="button">+</button></div><span class="hint">반음 단위. 멜로디 소리와 판정이 함께 바뀝니다.</span></div>
   <div class="row"><label for="oct">옥타브 무시</label><input id="oct" type="checkbox" checked><span class="hint">한 옥타브 위아래로 불러도 맞은 것으로 봅니다.</span></div>
-  <div class="row"><label for="tol">판정 폭</label><input id="tol" type="range" min="0.3" max="1.2" step="0.1" value="0.7"><output id="tolOut">±0.7</output></div>
+  <div class="row"><label for="tol">판정 폭</label><input id="tol" type="range" min="0.3" max="1.2" step="0.1" value="0.5"><output id="tolOut">±0.5</output></div>
   <div class="row"><label for="vol">멜로디 음량</label><input id="vol" type="range" min="0" max="1" step="0.05" value="0.6"><output id="volOut">60%</output></div>
-  <div class="row"><label for="lat">지연 보정</label><input id="lat" type="range" min="0" max="500" step="10" value="120"><output id="latOut">120ms</output></div>
+  <div class="row"><label for="lat">지연 보정</label><input id="lat" type="range" min="0" max="500" step="10" value="60"><output id="latOut">60ms</output></div>
   <p class="hint">이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 멜로디 소리를 주워 판정이 흐려집니다. 블루투스 이어폰은 소리가 늦게 나오므로, 내 목소리 선이 음표보다 계속 오른쪽에 찍히면 지연 보정을 올리세요.</p>
 </details>
 
@@ -206,12 +206,18 @@ function alignLyrics(notes,lines,beat){
 }
 
 // ---------------------------------------------------------------- pitch detection (YIN)
+// Judging constants below were tuned on three isolated studio vocals: the real take as the
+// "sung right" case, the same take judged a semitone off as the "sung wrong" case.
+const YIN_THR=0.10;      // stricter periodicity: fewer octave/noise glitches
+const MEDIAN_S=0.13;     // median of the pitch over this window
+const DELAY_S=0.10;      // analysis window + median + a singer's habitual lateness
+const EDGE_S=0.06;       // this close to a note edge, the neighbouring note's pitch also counts
 function detectPitch(x,sr){
   const W=x.length>>1; let rms=0; for(let i=0;i<W;i++) rms+=x[i]*x[i]; rms=Math.sqrt(rms/W);
   if(rms<0.008) return 0;
   const tmin=Math.floor(sr/1100), tmax=Math.min(W-1,Math.floor(sr/65)), d=new Float32Array(tmax+2); let run=0, best=-1;
   for(let tau=1;tau<=tmax+1;tau++){ let s=0; for(let i=0;i<W;i++){const v=x[i]-x[i+tau]; s+=v*v} run+=s; d[tau]=run>0?s*tau/run:1 }
-  for(let tau=Math.max(2,tmin);tau<=tmax;tau++){ if(d[tau]<0.15){ while(tau+1<=tmax&&d[tau+1]<d[tau]) tau++; best=tau; break } }
+  for(let tau=Math.max(2,tmin);tau<=tmax;tau++){ if(d[tau]<YIN_THR){ while(tau+1<=tmax&&d[tau+1]<d[tau]) tau++; best=tau; break } }
   if(best<0) return 0;
   const a=d[best-1],b=d[best],c=d[best+1], sh=(a+c-2*b)!==0?0.5*(a-c)/(a+c-2*b):0;
   return sr/(best+sh);
@@ -224,14 +230,14 @@ const DB=new Promise(res=>{ try{ const r=indexedDB.open("singalong",1); r.onupgr
 async function dbAll(){ const db=await DB; if(!db) return []; return new Promise(res=>{ const q=db.transaction("songs").objectStore("songs").getAll(); q.onsuccess=()=>res(q.result||[]); q.onerror=()=>res([]) }) }
 async function dbPut(s){ const db=await DB; if(db) db.transaction("songs","readwrite").objectStore("songs").put(s) }
 async function dbDel(id){ const db=await DB; if(db) db.transaction("songs","readwrite").objectStore("songs").delete(id) }
-const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("sa_"+k); localStorage.setItem("sa_"+k,v) }catch(e){} return null };
+const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("sa2_"+k); localStorage.setItem("sa2_"+k,v) }catch(e){} return null };
 
 // ---------------------------------------------------------------- state
 const $=id=>document.getElementById(id);
 const LEAD=3;                       // seconds of count-in before the first note
 let songs=[], song=null, ctx=null, master=null, analyser=null, micBuf=null, micStream=null;
 let playing=false, clock0=0, pos=0, schedIdx=0, schedTimer=0, raf=0;
-let key=0, octFree=true, tol=0.7, lat=0.12, trace=[], noteStat=[], lastSung=[];
+let key=0, octFree=true, tol=0.5, lat=0.06, trace=[], noteStat=[], lastSung=[];
 const now=()=>playing?ctx.currentTime-clock0:pos;
 const fmt=t=>{t=Math.max(0,t);return Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0")};
 
@@ -300,13 +306,16 @@ function tick(){
   const t=now(); if(t>=song.dur){ stop(); pos=song.dur; draw(); return }
   analyser.getFloatTimeDomainData(micBuf);
   const f=detectPitch(micBuf,ctx.sampleRate); let m=f?hz2midi(f):NaN;
-  lastSung.push(m); if(lastSung.length>3) lastSung.shift();                       // 3-frame median kills single-frame glitches
-  const v=lastSung.filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN;
-  const tj=t-lat, ni=targetAt(tj); let verdict="", cls="";
+  lastSung.push([t,m]); while(lastSung.length&&lastSung[0][0]<t-MEDIAN_S) lastSung.shift();   // short median kills glitches
+  const v=lastSung.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN;
+  const tj=t-lat-DELAY_S, ni=targetAt(tj); let verdict="", cls="";
   if(ni>=0){
     const tp=song.notes[ni].p+key, st=noteStat[ni]; st.n++;
     if(!isNaN(m)){ let diff=m-tp; if(octFree) diff-=12*Math.round(diff/12);
-      const ok=Math.abs(diff)<=tol; st.sung=(st.sung||0)+1; if(ok) st.hit++;
+      let ok=Math.abs(diff)<=tol;
+      if(!ok){ const n=song.notes[ni], nb=tj-n.t<EDGE_S?song.notes[ni-1]:(n.t+n.d-tj<EDGE_S?song.notes[ni+1]:null);
+        if(nb){ let d2=m-(nb.p+key); if(octFree) d2-=12*Math.round(d2/12); ok=Math.abs(d2)<=tol } }
+      st.sung=(st.sung||0)+1; if(ok) st.hit++;
       trace.push({t:tj,p:tp+diff,ok}); verdict=ok?"맞아요":(diff>0?"높아요 ":"낮아요 ")+(ok?"":Math.abs(diff).toFixed(1)); cls=ok?"ok":"bad" }
     else verdict="…";
   }else if(!isNaN(m)){ const near=nearestNote(tj); let p=m; if(near&&octFree) p-=12*Math.round((m-(near.p+key))/12); trace.push({t:tj,p,ok:null}); verdict="쉬는 구간" }
@@ -329,7 +338,7 @@ function renderLyrics(force){
   const cur=$("cur"), nx=$("next");
   if(!song){ cur.textContent="곡을 추가하면 가사가 여기에 나옵니다"; nx.textContent=""; lineIdx=-2; return }
   if(!song.lines.length){ if(force){ cur.textContent="이 곡에는 가사가 없습니다"; nx.textContent="" } return }
-  const t=now()-lat; let i=song.lines.findIndex(l=>t<l.t1+0.4); if(i<0) i=song.lines.length-1;
+  const t=now()-lat-DELAY_S; let i=song.lines.findIndex(l=>t<l.t1+0.4); if(i<0) i=song.lines.length-1;
   const L=song.lines[i];
   if(force||i!==lineIdx){ lineIdx=i; cur.textContent=""; for(const c of L.chunks){ const s=document.createElement("span"); s.textContent=c.text; cur.appendChild(s) }
     nx.textContent=song.lines[i+1]?song.lines[i+1].chunks.map(c=>c.text).join(""):"" }
@@ -341,7 +350,7 @@ function draw(){
   const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1, w=Math.round(r.width*dpr), h=Math.round(r.height*dpr);
   if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h }
   g2.clearRect(0,0,w,h); if(!song) return;
-  const t=now()-lat, span=6, x0=w*0.3, pps=w/span;                                  // "now" sits 30% from the left
+  const t=now()-lat-DELAY_S, span=6, x0=w*0.3, pps=w/span;                                  // "now" sits 30% from the left
   let lo=1e9,hi=-1e9; for(const n of song.notes){ if(n.p<lo)lo=n.p; if(n.p>hi)hi=n.p } lo+=key-3; hi+=key+3;
   const top=44*dpr, y=p=>top+(h-top-10*dpr)*(1-(p-lo)/(hi-lo)), nh=Math.max(6*dpr,(h-top)/(hi-lo)*0.9);
   g2.strokeStyle=css.line; g2.lineWidth=1; g2.beginPath(); for(let p=Math.ceil(lo);p<=hi;p++) if((p-key)%12===0||(p-key+1200)%12===7){ g2.moveTo(0,y(p)); g2.lineTo(w,y(p)) } g2.stroke();
