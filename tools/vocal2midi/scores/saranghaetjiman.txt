@@ -1,0 +1,36 @@
+# 김광석 - 사랑했지만 : lead-sheet melody (read from the score image).
+# Key D major, 4/4, quarter = 80.  LEN in 16th notes, 16 per bar.  Token format as in cheonghon.txt.
+# The repeat is written out as it is played: bars 5-12 (verse 1), bars 5-10 + 2nd ending 13-14
+# (verse 2), then 15-28.  Line labels count played bars from 5, so labels 13-18 are printed bars
+# 5-10, 19-20 are printed 13-14, and 21-34 are printed 15-28.
+# Pitches as notated; the voice sounds an octave lower.
+5: r:4 A4:4 G4:2 F#4:4 D4:2
+6: E4:4 F#4:2 F#4:2 ~F#4:8
+7: D4:4 E4:4 F#4:2 G4:4 F#4:2
+8: ~F#4:16
+9: r:4 C#5:2 D5:2 B4:2 G4:4 E4:2
+10: F#4:2 A4:2 B4:2 D4:2 ~D4:8
+11: D4:4 B3:4 D4:2 E4:4 F#4:2
+12: E4:16
+13: r:4 A4:4 G4:2 F#4:4 D4:2
+14: E4:4 F#4:2 F#4:2 ~F#4:8
+15: D4:4 E4:4 F#4:2 G4:4 F#4:2
+16: ~F#4:16
+17: r:4 C#5:2 D5:2 B4:2 G4:4 E4:2
+18: F#4:2 A4:2 B4:2 D4:2 ~D4:8
+19: D4:4 F#4:4 E4:4 D4:2 D4:2
+20: ~D4:12 r:4
+21: r:4 D5:2 D5:2 C#5:2 D5:2 E5:2 D5:2
+22: ~D5:2 A4:2 A4:2 G4:2 ~G4:4 r:4
+23: G4:4 A4:4 A4:2 A4:2 B4:2 F#4:2
+24: E4:12 r:4
+25: r:4 D5:2 D5:2 C#5:2 D5:2 E5:2 E5:2
+26: F#5:2 A4:2 A4:2 F#5:2 ~F#5:4 r:4
+27: D5:4 B4:4 D5:2 E5:4 F#5:2
+28: E5:16
+29: r:4 A4:2 A4:2 B4:2 A4:2 A4:2 A5:2
+30: ~A5:16
+31: ~A5:8 r:2 A5:2 G5:2 F#5:2
+32: E5:4 E5:2 r:2 E5:2 F#5:2 G5:2 F#5:2
+33: ~F#5:4 G5:2 F#5:2 r:4 F#5:2 E5:2
+34: D5:4 C#5:2 D5:2 r:2 D5:2 E5:2 F#5:2
