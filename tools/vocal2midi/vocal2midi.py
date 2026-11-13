@@ -83,6 +83,7 @@ def main():
     tonic = N.NAMES.index(a.key) if a.key else N.estimate_key(ms, voiced)
     lab = N.viterbi_notes(ms, voiced, per, tonic=tonic)
     lab = N.absorb_ornaments(lab)
+    lab = N.fold_octave_errors(lab)
     raw_notes = N.labels_to_notes(lab)
 
     t0, period = N.beat_grid(mono, sr, a.bpm_hint)

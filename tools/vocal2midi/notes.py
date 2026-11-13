@@ -171,6 +171,30 @@ def absorb_ornaments(lab, hop_s=0.01, max_dur=0.11, max_step=2):
     return lab
 
 
+def fold_octave_errors(lab, hop_s=0.01, ctx_s=6.0, min_jump=12):
+    """Pitch trackers sometimes lock onto the 2nd harmonic (or sub-harmonic) of a loud,
+    sustained note and report it an octave off.  A note that sits far from the melody
+    around it, and would sit close if moved by an octave, is moved."""
+    lab = lab.copy()
+    b = np.flatnonzero(np.diff(lab) != 0) + 1
+    starts = np.concatenate([[0], b]); ends = np.concatenate([b, [len(lab)]])
+    w = int(ctx_s / hop_s)
+    for a, e in zip(starts, ends):
+        p = lab[a]
+        if p < 0:
+            continue
+        ctx = np.concatenate([lab[max(0, a - w):a], lab[e:e + w]])
+        ctx = ctx[ctx >= 0]
+        if len(ctx) < 50:
+            continue
+        med = np.median(ctx)
+        if abs(p - med) >= min_jump:
+            q = p - 12 if p > med else p + 12
+            if abs(q - med) < abs(p - med) - 4:
+                lab[a:e] = q
+    return lab
+
+
 # ---------------------------------------------------------------- rhythm grid
 
 def beat_grid(mix_mono, sr, bpm_hint=None):

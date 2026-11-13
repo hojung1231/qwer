@@ -42,14 +42,23 @@ def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None, s
     in the recording is unknown) and try octave shifts; report the best alignment."""
     n = len(ref_slots)
     ref_voiced = np.array([bool(s) for s in ref_slots])
+    # The recording may be in another key than the print (and a male voice sounds an octave
+    # below the treble clef), so every transposition from two octaves down to one up is tried.
+    R = np.zeros((n, 128 + 64), bool)
+    for i, ps in enumerate(ref_slots):
+        for p in ps:
+            R[i, p] = True
+    P = np.asarray(pred_slots)
+    rows = np.arange(n)
     cands = []
     rng = search if search is not None else range(0, len(pred_slots) - n)
     for off in rng:
-        seg = pred_slots[off: off + n]
+        seg = P[off: off + n]
         if len(seg) < n:
             break
-        for octv in (-12, 0, 12):
-            hit = sum(1 for i in range(n) if ref_voiced[i] and (seg[i] - octv) in ref_slots[i])
+        for octv in range(-24, 13):
+            idx = seg - octv
+            hit = int((R[rows, np.clip(idx, 0, 191)] & (seg >= 0)).sum())
             cands.append((hit, off, octv))
     top = max(c[0] for c in cands)
     # a repeated section (2nd verse) matches about as well; the score's bar numbers refer
