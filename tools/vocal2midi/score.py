@@ -14,23 +14,25 @@ def name_to_midi(s: str) -> int:
 def load_reference(path):
     """Returns (first_measure, slots, onsets): slots[i] = frozenset of accepted MIDI pitches
     for 16th-slot i (empty set = rest); onsets[i] = True where a new note is attacked."""
-    slots, onsets, first = [], [], None
+    slots, onsets, first, sure = [], [], None, []
     for line in open(path, encoding="utf-8"):
         line = line.split("#", 1)[0] if line.lstrip().startswith("#") else line
         if not line.strip():
             continue
         meas, body = line.split(":", 1)
+        unsure = meas.strip().startswith("?")
+        meas = meas.strip().lstrip("?")
         first = int(meas) if first is None else first
         for tok in body.split():
             p, n = tok.rsplit(":", 1)
             tied = p.startswith("~"); p = p.lstrip("~")
             ps = frozenset() if p == "r" else frozenset(name_to_midi(x) for x in p.split("|"))
             for k in range(int(n)):
-                slots.append(ps); onsets.append(bool(ps) and k == 0 and not tied)
-    return first, slots, np.array(onsets)
+                slots.append(ps); onsets.append(bool(ps) and k == 0 and not tied); sure.append(not unsure)
+    return first, slots, np.array(onsets), np.array(sure)
 
 
-def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None):
+def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None, sure=None):
     """Slide the reference along the predicted slot sequence (the bar offset of the excerpt
     in the recording is unknown) and try octave shifts; report the best alignment."""
     n = len(ref_slots)
@@ -57,6 +59,14 @@ def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None):
         "chroma_acc": sum(1 for i in range(n) if ref_voiced[i] and pv[i] and
                           any((seg[i] - p) % 12 == 0 for p in ref_slots[i])) / ref_voiced.sum(),
     }
+    if sure is not None and not sure.all():
+        k = ref_voiced & sure
+        res["pitch_acc_clear_bars"] = sum(1 for i in np.flatnonzero(k) if (seg[i] - octv) in ref_slots[i]) / k.sum()
+        res["pitch_acc_tol1_clear_bars"] = sum(1 for i in np.flatnonzero(k) if any(
+            0 <= i + d < n and (seg[i + d] - octv) in ref_slots[i] for d in (-1, 0, 1))) / k.sum()
+    # same, but forgiving one 16th of early/late phrasing
+    res["pitch_acc_tol1"] = sum(1 for i in range(n) if ref_voiced[i] and any(
+        0 <= i + d < n and (seg[i + d] - octv) in ref_slots[i] for d in (-1, 0, 1))) / ref_voiced.sum()
     if pred_onsets is not None:
         po = np.asarray(pred_onsets[off: off + n])
         ro = ref_onsets

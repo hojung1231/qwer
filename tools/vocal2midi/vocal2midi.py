@@ -68,11 +68,12 @@ def main():
 
     voiced = N.voicing(per, rms)
     m = N.hz_to_midi_f(f0)
-    tune = N.tuning_offset(m, voiced)
-    m = m - tune
-    tonic = N.NAMES.index(a.key) if a.key else N.estimate_key(m, voiced)
-    ms = N.smooth_vibrato(m, voiced)
+    ms = N.smooth_vibrato(m, voiced)          # vibrato flattened first, so tuning sees note centres
+    tune = N.tuning_offset(ms, voiced)
+    ms = ms - tune
+    tonic = N.NAMES.index(a.key) if a.key else N.estimate_key(ms, voiced)
     lab = N.viterbi_notes(ms, voiced, per, tonic=tonic)
+    lab = N.absorb_ornaments(lab)
     raw_notes = N.labels_to_notes(lab)
 
     t0, period = N.beat_grid(mono, sr, a.bpm_hint)
@@ -80,27 +81,34 @@ def main():
     v16 = librosa.resample(vocal, orig_sr=sr, target_sr=16000)
     oenv = librosa.onset.onset_strength(y=v16, sr=16000, hop_length=160)
     oth = float(np.percentile(oenv, 90))
-    qnotes, slots = N.quantise(lab, t0, period, oenv, onset_thresh=oth)
+    lag = N.grid_lag(lab, t0, period)
+    qnotes, slots = N.quantise(lab, t0 + lag, period, oenv, onset_thresh=oth)
 
     info = {"separator": sep, "tuning_cents": round(100 * tune, 1), "key": N.NAMES[tonic] + " major",
-            "bpm": round(bpm, 3), "first_beat_s": round(t0, 4),
+            "bpm": round(bpm, 3), "first_beat_s": round(t0, 4), "vocal_lag_ms": round(1000 * lag),
             "raw_notes": len(raw_notes), "quantised_notes": len(qnotes)}
 
-    # the 16th grid starts at t0 (a beat); MIDI time 0 = that beat, so it lines up with the audio shifted by t0
-    write_midi(os.path.join(a.out, "melody_raw.mid"), raw_notes, bpm, 0.0, a.transpose)
-    write_midi(os.path.join(a.out, "melody_quantised.mid"), qnotes, bpm, t0, a.transpose)
-
+    origin = t0 + lag                      # MIDI time 0; a beat, but the bar phase is unknown...
+    octv = 0
     if a.reference:
-        first, ref_slots, ref_on = S.load_reference(a.reference)
+        first, ref_slots, ref_on, sure = S.load_reference(a.reference)
         pred_on = np.zeros(len(slots), bool)
         for n in qnotes:
             pred_on[n.slot] = True
-        ev = S.evaluate(slots, ref_slots, ref_on, pred_on)
-        info["evaluation"] = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in ev.items()}
+        ev = S.evaluate(slots, ref_slots, ref_on, pred_on, sure=sure)
+        info["evaluation"] = {k: (round(float(v), 4) if not isinstance(v, int) else v) for k, v in ev.items()}
         off, octv = ev["slot_offset"], ev["octave_shift"]
-        info["evaluation"]["excerpt_starts_s"] = round(t0 + off * period / 4, 3)
+        info["evaluation"]["excerpt_starts_s"] = round(t0 + lag + off * period / 4, 3)
+        # ...unless the score tells us where its first bar sits: put bar 1 of the score on bar 1 of the MIDI
+        bar1 = off - (first - 1) * 16
+        origin = t0 + lag + (bar1 % 16 - (16 if bar1 % 16 else 0) if bar1 < 0 else bar1) * period / 4
         with open(os.path.join(a.out, "comparison.txt"), "w", encoding="utf-8") as f:
             f.write(S.side_by_side(slots, ref_slots, off, octv, first) + "\n")
+    info["midi_origin_s"] = round(origin, 3)
+    write_midi(os.path.join(a.out, "melody_raw.mid"), raw_notes, bpm, origin, a.transpose)
+    write_midi(os.path.join(a.out, "melody_quantised.mid"), qnotes, bpm, origin, a.transpose)
+    if octv:
+        write_midi(os.path.join(a.out, "melody_quantised_score_octave.mid"), qnotes, bpm, origin, -octv)
     with open(os.path.join(a.out, "report.json"), "w") as f:
         json.dump(info, f, indent=2, ensure_ascii=False)
     print(json.dumps(info, indent=2, ensure_ascii=False))

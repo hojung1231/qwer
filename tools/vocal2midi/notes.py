@@ -38,10 +38,18 @@ def hz_to_midi_f(f0):
     return 69.0 + 12.0 * np.log2(np.maximum(f0, 1e-6) / 440.0)
 
 
-def voicing(per, rms, per_on=0.5, per_off=0.35, rel_db=-32.0):
-    """Hysteresis gate on periodicity, plus a loudness floor relative to the vocal's level."""
+def voicing(per, rms, per_on=0.5, per_off=0.3, rel_db=-14.0, win_s=8.0, hop_s=0.01):
+    """Voiced = periodic (hysteresis) AND loud relative to the vocal's own recent level.
+
+    The loudness reference is a rolling 90th percentile, so quiet verses and loud
+    choruses are each judged on their own scale.  This is what rejects accompaniment
+    that leaks through the separation: it is pitched (periodic) but ~10 dB quieter."""
+    from scipy.ndimage import percentile_filter
     db = 20 * np.log10(rms + 1e-9)
-    loud = db > (np.percentile(db, 95) + rel_db)
+    step = 10                                           # evaluate the slow envelope every 100 ms
+    ref = percentile_filter(db[::step], 90, size=max(3, int(win_s / (hop_s * step))), mode="nearest")
+    ref = np.maximum(np.repeat(ref, step)[:len(db)], np.percentile(db, 60))
+    loud = db > ref + rel_db
     v = np.zeros(len(per), bool)
     on = False
     for i in range(len(per)):
@@ -52,7 +60,12 @@ def voicing(per, rms, per_on=0.5, per_off=0.35, rel_db=-32.0):
 
 def tuning_offset(m, voiced):
     """Global deviation from A440 in semitones (-0.5..0.5): circular mean of the fractional part."""
-    frac = m[voiced] - np.round(m[voiced])
+    # only frames where the pitch is momentarily flat (note centres, not glides)
+    slope = np.abs(np.gradient(m))
+    ok = voiced & (slope < 0.03)
+    if ok.sum() < 50:
+        ok = voiced
+    frac = m[ok] - np.round(m[ok])
     ang = np.exp(2j * np.pi * frac)
     return float(np.angle(ang.mean()) / (2 * np.pi))
 
@@ -81,7 +94,7 @@ def smooth_vibrato(m, voiced, win_s=0.17, hop_s=0.01):
 
 
 def viterbi_notes(m, voiced, per, tonic=None, lo=36, hi=88, sigma=0.55,
-                  switch_cost=9.0, voice_cost=3.0, offkey_cost=1.2, hop_s=0.01):
+                  switch_cost=9.0, voice_cost=3.0, offkey_cost=1.0, hop_s=0.01):
     """Frame-wise note labels (MIDI number, or -1 for silence)."""
     pitches = np.arange(lo, hi + 1)
     K, T = len(pitches) + 1, len(m)          # last state = silence
@@ -92,7 +105,7 @@ def viterbi_notes(m, voiced, per, tonic=None, lo=36, hi=88, sigma=0.55,
     em[:, :-1] = 0.5 * d * d * conf           # unreliable frames pull less
     if tonic is not None:
         inkey = np.isin((pitches - tonic) % 12, MAJOR)
-        em[:, :-1] += np.where(inkey, 0.0, offkey_cost * hop_s / 0.01 * 0.1)[None, :]
+        em[:, :-1] += np.where(inkey, 0.0, offkey_cost)[None, :]
     big = 1e6
     em[:, -1] = np.where(voiced, big, 0.0)
     em[~voiced, :-1] += 2.0                   # a note may bridge short unvoiced gaps, at a price
@@ -128,6 +141,32 @@ def labels_to_notes(lab, hop_s=0.01, min_dur=0.06):
     return notes
 
 
+def absorb_ornaments(lab, hop_s=0.01, max_dur=0.11, max_step=2):
+    """Scoops, falls and turn-like blips are not notes on a lead sheet: a very short
+    segment touching a longer neighbour within a whole tone is absorbed into it
+    (into the following note for scoops, else the preceding one)."""
+    lab = lab.copy()
+    changed = True
+    while changed:
+        changed = False
+        b = np.flatnonzero(np.diff(lab) != 0) + 1
+        starts = np.concatenate([[0], b]); ends = np.concatenate([b, [len(lab)]])
+        for k in range(len(starts)):
+            p = lab[starts[k]]
+            dur = (ends[k] - starts[k]) * hop_s
+            if p < 0 or dur > max_dur:
+                continue
+            nxt = lab[ends[k]] if k + 1 < len(starts) else -1
+            prv = lab[starts[k] - 1] if k > 0 else -1
+            nd = (ends[k + 1] - starts[k + 1]) * hop_s if k + 1 < len(starts) else 0
+            pd = (ends[k - 1] - starts[k - 1]) * hop_s if k > 0 else 0
+            if nxt >= 0 and abs(nxt - p) <= max_step and nd > dur:
+                lab[starts[k]:ends[k]] = nxt; changed = True; break
+            if prv >= 0 and abs(prv - p) <= max_step and pd > dur:
+                lab[starts[k]:ends[k]] = prv; changed = True; break
+    return lab
+
+
 # ---------------------------------------------------------------- rhythm grid
 
 def beat_grid(mix_mono, sr, bpm_hint=None):
@@ -150,9 +189,31 @@ def beat_grid(mix_mono, sr, bpm_hint=None):
     return float(t0), float(p)
 
 
+def grid_lag(lab, t0, period, div=4, hop_s=0.01):
+    """Singers sit behind (or ahead of) the beat.  Find the constant shift of the 16th grid,
+    within +-half a slot, for which note changes fall on slot boundaries, i.e. for which
+    frames agree best with the majority label of their slot."""
+    slot = period / div
+    best = (-1.0, 0.0)
+    for lag in np.arange(-0.5, 0.5, 0.05) * slot:
+        idx = np.floor((np.arange(len(lab)) * hop_s - t0 - lag) / slot).astype(int)
+        ok = (idx >= 0) & (lab >= 0)
+        key = idx[ok] * 128 + lab[ok]
+        _, inv, cnt = np.unique(key, return_inverse=True, return_counts=True)
+        slots, sinv = np.unique(idx[ok], return_inverse=True)
+        maj = np.zeros(len(slots)); np.maximum.at(maj, sinv, cnt[inv])
+        score = maj.sum() / ok.sum()
+        if score > best[0]:
+            best = (score, float(lag))
+    return best[1]
+
+
 def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.45,
-             onset_thresh=None):
-    """Vote frame labels into 1/div-beat slots; merge runs; split at onsets."""
+             onset_thresh=None, legato_slots=2):
+    """Vote frame labels into 1/div-beat slots; merge runs; split at onsets.
+    legato_slots: a singer clips note ends for breath/consonants where the score keeps the
+    note sounding, so a silence of up to this many slots *inside a phrase* is given back to
+    the preceding note."""
     slot = period / div
     nslots = int((len(lab) * hop_s - t0) / slot)
     sl = np.full(nslots, -1, int)
@@ -165,13 +226,27 @@ def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.45,
         if len(v) >= min_fill * len(seg):
             vals, cnt = np.unique(v, return_counts=True)
             sl[s] = vals[np.argmax(cnt)]
+    filled = np.zeros(nslots, bool)
+    s = 0
+    while s < nslots and legato_slots:
+        if sl[s] < 0:
+            s += 1; continue
+        e = s
+        while e < nslots and sl[e] == sl[s]:
+            e += 1
+        g = e
+        while g < nslots and sl[g] < 0:
+            g += 1
+        if g < nslots and 0 < g - e <= legato_slots:
+            sl[e:g] = sl[s]; filled[e:g] = True
+        s = g if g > e else e
     notes, s = [], 0
     while s < nslots:
         if sl[s] < 0:
             s += 1; continue
         e = s + 1
         while e < nslots and sl[e] == sl[s]:
-            if onset_env is not None and onset_thresh is not None:
+            if onset_env is not None and onset_thresh is not None and not filled[e]:
                 a = int(round((t0 + e * slot) / hop_s))
                 w = onset_env[max(0, a - 4): a + 5]
                 if len(w) and w.max() > onset_thresh:
