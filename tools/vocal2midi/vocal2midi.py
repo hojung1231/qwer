@@ -51,6 +51,8 @@ def main():
     ap.add_argument("--separator", choices=["auto", "demucs", "center"], default="auto")
     ap.add_argument("--bpm-hint", type=float, default=None, help="tempo printed on the score, if known")
     ap.add_argument("--key", default=None, help="tonic of the major key, e.g. E (default: estimated)")
+    ap.add_argument("--vocal", default=None,
+                    help="use this already-separated vocal file instead of separating (e.g. a lead-only stem)")
     ap.add_argument("--lead-only", action="store_true",
                     help="after Demucs, keep only the centre of the stereo vocal stem (drops panned backing vocals)")
     ap.add_argument("--div", type=int, default=None,
@@ -70,14 +72,17 @@ def main():
         z = np.load(f0_path); t, f0, per, rms = z["t"], z["f0"], z["per"], z["rms"]; sep = str(z["sep"])
         vocal, _ = librosa.load(os.path.join(a.out, "vocal.wav"), sr=sr)
     else:
-        vocal, sep = isolate.isolate(stereo, sr, a.separator, a.lead_only)
+        if a.vocal:
+            vocal, sep = isolate.decode(a.vocal, sr).mean(0), "external"
+        else:
+            vocal, sep = isolate.isolate(stereo, sr, a.separator, a.lead_only)
         import soundfile as sf
         sf.write(os.path.join(a.out, "vocal.wav"), vocal, sr)
         t, f0, per, rms = pitch.track(vocal, sr)
         np.savez(f0_path, t=t, f0=f0, per=per, rms=rms, sep=sep)
 
     # a clean neural separation leaves little accompaniment, so the loudness gate can be looser
-    voiced = N.voicing(per, rms, rel_db=-18.0 if sep == "demucs" else -14.0)
+    voiced = N.voicing(per, rms, rel_db=-18.0 if sep in ("demucs", "external") else -14.0)
     m = N.hz_to_midi_f(f0)
     ms = N.smooth_vibrato(m, voiced)          # vibrato flattened first, so tuning sees note centres
     tune = N.tuning_offset(ms, voiced)
