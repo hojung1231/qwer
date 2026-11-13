@@ -23,6 +23,13 @@ python3 vocal2midi.py 노래.mp3 -o out --bpm-hint 70 --key E --reference scores
 | `report.json` | 튜닝, 조성, 템포, 평가 수치 |
 | `vocal.wav`, `f0.npz` | 분리된 보컬, 프레임별 음고(재실행 시 `--cache`로 재사용) |
 
+## 따라 부르기 페이지 (`dist/singalong.html`)
+
+추출한 멜로디를 이어폰으로 들으며 휴대폰 마이크에 따라 부르면, 부른 음이 멜로디와 맞는지 실시간으로 보여줍니다.
+멜로디 MIDI와 가사가 든 mp3를 고르면 됩니다. 가사는 mp3의 ID3 태그(USLT)에서 읽고, 줄마다 음절 수와
+음표 수·쉼표 위치를 맞추는 동적 계획법으로 멜로디에 배치합니다. 파일은 브라우저 안에서만 읽습니다.
+마이크는 HTTPS(또는 localhost)에서만 열리므로 GitHub Pages로 배포해 사용합니다.
+
 ## 방법
 
 1. **보컬 분리** (`isolate.py`) — Demucs 가중치를 받을 수 있으면 신경망 분리, 아니면 모델 없이
