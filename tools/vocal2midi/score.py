@@ -37,7 +37,7 @@ def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None, s
     in the recording is unknown) and try octave shifts; report the best alignment."""
     n = len(ref_slots)
     ref_voiced = np.array([bool(s) for s in ref_slots])
-    best = None
+    cands = []
     rng = search if search is not None else range(0, len(pred_slots) - n)
     for off in rng:
         seg = pred_slots[off: off + n]
@@ -45,13 +45,17 @@ def evaluate(pred_slots, ref_slots, ref_onsets, pred_onsets=None, search=None, s
             break
         for octv in (-12, 0, 12):
             hit = sum(1 for i in range(n) if ref_voiced[i] and (seg[i] - octv) in ref_slots[i])
-            if best is None or hit > best[0]:
-                best = (hit, off, octv)
+            cands.append((hit, off, octv))
+    top = max(c[0] for c in cands)
+    # a repeated section (2nd verse) matches about as well; the score's bar numbers refer
+    # to the first time through, so take the earliest alignment that is nearly as good
+    best = min((c for c in cands if c[0] >= 0.85 * top), key=lambda c: c[1])
+    later = sorted({c[1] for c in cands if c[0] >= 0.85 * top and c[1] - best[1] >= n})
     hit, off, octv = best
     seg = np.asarray(pred_slots[off: off + n])
     pv = seg >= 0
     res = {
-        "slot_offset": off, "octave_shift": octv,
+        "slot_offset": off, "octave_shift": octv, "repeat_offsets": later[:3],
         "pitch_acc": hit / ref_voiced.sum(),                       # correct pitch on sung slots
         "voicing_acc": float((pv == ref_voiced).mean()),           # note vs rest agreement
         "overall_acc": float(np.mean([(seg[i] - octv) in ref_slots[i] if ref_voiced[i] else seg[i] < 0

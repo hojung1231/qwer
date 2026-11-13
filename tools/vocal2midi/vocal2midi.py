@@ -66,7 +66,8 @@ def main():
         t, f0, per, rms = pitch.track(vocal, sr)
         np.savez(f0_path, t=t, f0=f0, per=per, rms=rms, sep=sep)
 
-    voiced = N.voicing(per, rms)
+    # a clean neural separation leaves little accompaniment, so the loudness gate can be looser
+    voiced = N.voicing(per, rms, rel_db=-18.0 if sep == "demucs" else -14.0)
     m = N.hz_to_midi_f(f0)
     ms = N.smooth_vibrato(m, voiced)          # vibrato flattened first, so tuning sees note centres
     tune = N.tuning_offset(ms, voiced)
@@ -96,7 +97,7 @@ def main():
         for n in qnotes:
             pred_on[n.slot] = True
         ev = S.evaluate(slots, ref_slots, ref_on, pred_on, sure=sure)
-        info["evaluation"] = {k: (round(float(v), 4) if not isinstance(v, int) else v) for k, v in ev.items()}
+        info["evaluation"] = {k: (v if isinstance(v, (int, list)) else round(float(v), 4)) for k, v in ev.items()}
         off, octv = ev["slot_offset"], ev["octave_shift"]
         info["evaluation"]["excerpt_starts_s"] = round(t0 + lag + off * period / 4, 3)
         # ...unless the score tells us where its first bar sits: put bar 1 of the score on bar 1 of the MIDI
