@@ -51,9 +51,11 @@ def demucs_extract(stereo: np.ndarray, sr: int) -> np.ndarray:
         import torchaudio
         x = torchaudio.functional.resample(x, sr, model.samplerate)
     ref = x.mean(1, keepdim=True)
-    x = (x - ref.mean()) / (ref.std() + 1e-8)
+    mu, sd = ref.mean(), ref.std() + 1e-8
+    x = (x - mu) / sd
     with torch.no_grad():
         out = apply_model(model, x, shifts=1, overlap=0.25, progress=False)[0]
+    out = out * sd + mu                      # back to the level of the original recording
     v = out[model.sources.index("vocals")].mean(0).numpy()
     if sr != model.samplerate:
         v = librosa.resample(v, orig_sr=model.samplerate, target_sr=sr)
