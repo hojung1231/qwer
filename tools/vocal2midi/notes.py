@@ -93,13 +93,17 @@ def smooth_vibrato(m, voiced, win_s=0.17, hop_s=0.01):
     return out
 
 
-def viterbi_notes(m, voiced, per, tonic=None, lo=36, hi=88, sigma=0.55,
+def viterbi_notes(m, voiced, per, tonic=None, lo=36, hi=88, sigma=0.45, sigma_flat=0.9,
                   switch_cost=9.0, voice_cost=3.0, offkey_cost=1.0, hop_s=0.01):
     """Frame-wise note labels (MIDI number, or -1 for silence)."""
     pitches = np.arange(lo, hi + 1)
     K, T = len(pitches) + 1, len(m)          # last state = silence
     # emission costs (negative log-likelihood up to constants)
-    d = (m[:, None] - pitches[None, :]) / sigma
+    # Singers miss asymmetrically: scoops, under-supported high notes and phrase-end falls
+    # all land *below* the intended note, rarely above.  A wider tolerance on the flat side
+    # (sigma_flat) keeps a 40-cent-flat E from being read as D#.
+    d = m[:, None] - pitches[None, :]
+    d = d / np.where(d < 0, sigma_flat or sigma, sigma)
     em = np.empty((T, K))
     conf = np.clip(per, 0.05, 1.0)[:, None]
     em[:, :-1] = 0.5 * d * d * conf           # unreliable frames pull less
@@ -208,8 +212,8 @@ def grid_lag(lab, t0, period, div=4, hop_s=0.01):
     return best[1]
 
 
-def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.45,
-             onset_thresh=None, legato_slots=2):
+def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.35,
+             onset_thresh=None, legato_slots=3, arrive_frac=0.3):
     """Vote frame labels into 1/div-beat slots; merge runs; split at onsets.
     legato_slots: a singer clips note ends for breath/consonants where the score keeps the
     note sounding, so a silence of up to this many slots *inside a phrase* is given back to
@@ -226,6 +230,14 @@ def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.45,
         if len(v) >= min_fill * len(seg):
             vals, cnt = np.unique(v, return_counts=True)
             sl[s] = vals[np.argmax(cnt)]
+            # A note is notated where its syllable starts, but the pitch only *arrives* after
+            # the consonant and the glide.  So a note that arrives part-way through a slot and
+            # carries on into the next one owns the slot even without a majority.
+            last = seg[-1]
+            nxt = lab[b:b + max(1, (b - a) // 2)]
+            if last >= 0 and last != sl[s] and len(nxt) and (nxt == last).all() \
+                    and (seg == last).sum() >= arrive_frac * len(seg):
+                sl[s] = last
     filled = np.zeros(nslots, bool)
     s = 0
     while s < nslots and legato_slots:
