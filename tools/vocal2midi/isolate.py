@@ -40,7 +40,7 @@ def center_extract(stereo: np.ndarray, sr: int, power: float = 4.0) -> np.ndarra
     return librosa.istft(C, hop_length=hop, length=stereo.shape[1])
 
 
-def demucs_extract(stereo: np.ndarray, sr: int) -> np.ndarray:
+def demucs_extract(stereo: np.ndarray, sr: int, stereo_out: bool = False) -> np.ndarray:
     import torch
     from demucs.pretrained import get_model
     from demucs.apply import apply_model
@@ -56,15 +56,30 @@ def demucs_extract(stereo: np.ndarray, sr: int) -> np.ndarray:
     with torch.no_grad():
         out = apply_model(model, x, shifts=1, overlap=0.25, progress=False)[0]
     out = out * sd + mu                      # back to the level of the original recording
-    v = out[model.sources.index("vocals")].mean(0).numpy()
+    v = out[model.sources.index("vocals")].numpy()            # (2, n): keep the stereo image
     if sr != model.samplerate:
         v = librosa.resample(v, orig_sr=model.samplerate, target_sr=sr)
-    return v
+    return v if stereo_out else v.mean(0)
 
 
-def isolate(stereo: np.ndarray, sr: int, method: str = "auto") -> tuple[np.ndarray, str]:
+def lead_from_stereo(vocals: np.ndarray, power: float = 3.0) -> np.ndarray:
+    """Lead vocal out of a stereo vocal stem.  The lead is mixed dead-centre; harmony and
+    doubled backing vocals are spread left/right.  Keep the time-frequency bins where the
+    two channels agree in level and phase (same idea as center_extract, but on a stem that
+    no longer contains instruments, so nothing else needs filtering)."""
+    n_fft, hop = 4096, 1024
+    L = librosa.stft(vocals[0], n_fft=n_fft, hop_length=hop)
+    R = librosa.stft(vocals[1], n_fft=n_fft, hop_length=hop)
+    sim = 2.0 * np.real(L * np.conj(R)) / (np.abs(L) ** 2 + np.abs(R) ** 2 + 1e-12)
+    C = np.clip(sim, 0.0, 1.0) ** power * 0.5 * (L + R)
+    return librosa.istft(C, hop_length=hop, length=vocals.shape[1])
+
+
+def isolate(stereo: np.ndarray, sr: int, method: str = "auto", lead_only: bool = False) -> tuple[np.ndarray, str]:
     if method in ("auto", "demucs"):
         try:
+            if lead_only:
+                return lead_from_stereo(demucs_extract(stereo, sr, stereo_out=True)), "demucs"
             return demucs_extract(stereo, sr), "demucs"
         except Exception as e:  # weights unavailable / offline
             if method == "demucs":

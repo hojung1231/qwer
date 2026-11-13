@@ -51,6 +51,8 @@ def main():
     ap.add_argument("--separator", choices=["auto", "demucs", "center"], default="auto")
     ap.add_argument("--bpm-hint", type=float, default=None, help="tempo printed on the score, if known")
     ap.add_argument("--key", default=None, help="tonic of the major key, e.g. E (default: estimated)")
+    ap.add_argument("--lead-only", action="store_true",
+                    help="after Demucs, keep only the centre of the stereo vocal stem (drops panned backing vocals)")
     ap.add_argument("--div", type=int, default=None,
                     help="grid slots per beat: 4 = 16ths in simple time (default), 3 = 8ths in 6/8, 12/8")
     ap.add_argument("--transpose", type=int, default=0,
@@ -68,7 +70,7 @@ def main():
         z = np.load(f0_path); t, f0, per, rms = z["t"], z["f0"], z["per"], z["rms"]; sep = str(z["sep"])
         vocal, _ = librosa.load(os.path.join(a.out, "vocal.wav"), sr=sr)
     else:
-        vocal, sep = isolate.isolate(stereo, sr, a.separator)
+        vocal, sep = isolate.isolate(stereo, sr, a.separator, a.lead_only)
         import soundfile as sf
         sf.write(os.path.join(a.out, "vocal.wav"), vocal, sr)
         t, f0, per, rms = pitch.track(vocal, sr)
