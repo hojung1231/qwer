@@ -90,7 +90,7 @@ def main():
     bpm = 60.0 / period
     v16 = librosa.resample(vocal, orig_sr=sr, target_sr=16000)
     oenv = librosa.onset.onset_strength(y=v16, sr=16000, hop_length=160)
-    oth = float(np.percentile(oenv, 90))
+    rearts = N.rearticulation(oenv, rms)
     meta = dict(S.META_DEFAULT)
     if a.reference:
         first, ref_slots, ref_on, sure, meta = S.load_reference(a.reference)
@@ -99,7 +99,7 @@ def main():
     div, bar = meta["div"], meta["bar"]
     lag = N.grid_lag(lab, t0, period, div=div)
     # in-phrase gaps of up to 3/4 beat are returned to the preceding note
-    qnotes, slots = N.quantise(lab, t0 + lag, period, oenv, div=div, onset_thresh=oth,
+    qnotes, slots = N.quantise(lab, t0 + lag, period, rearts, div=div,
                                legato_slots=max(1, int(0.75 * div)))
 
     info = {"separator": sep, "tuning_cents": round(100 * tune, 1), "key": N.NAMES[tonic] + " major",

@@ -236,6 +236,20 @@ def grid_lag(lab, t0, period, div=4, hop_s=0.01):
     return best[1]
 
 
+def rearticulation(onset_env, rms, hop_s=0.01, pct=90, dip_db=3.0, ctx_s=0.3):
+    """Per-frame flag: a new syllable starts here on the *same* pitch.
+    An onset-strength peak alone is not enough - vibrato and swells on one long held note
+    produce them too.  A real re-attack is preceded by a consonant or a breath, i.e. a
+    brief drop in loudness, so both are required."""
+    from scipy.ndimage import median_filter, minimum_filter1d, maximum_filter1d
+    n = min(len(onset_env), len(rms))
+    db = 20 * np.log10(rms[:n] + 1e-9)
+    local = median_filter(db, size=int(2 * ctx_s / hop_s) | 1, mode="nearest")
+    dipped = minimum_filter1d(db - local, size=13, origin=4) < -dip_db     # dip within ~100 ms before
+    strong = maximum_filter1d(onset_env[:n], size=9) > np.percentile(onset_env, pct)
+    return strong & dipped
+
+
 def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.35,
              onset_thresh=None, legato_slots=3, arrive_frac=0.3):
     """Vote frame labels into 1/div-beat slots; merge runs; split at onsets.
@@ -282,10 +296,9 @@ def quantise(lab, t0, period, onset_env=None, div=4, hop_s=0.01, min_fill=0.35,
             s += 1; continue
         e = s + 1
         while e < nslots and sl[e] == sl[s]:
-            if onset_env is not None and onset_thresh is not None and not filled[e]:
+            if onset_env is not None and not filled[e]:
                 a = int(round((t0 + e * slot) / hop_s))
-                w = onset_env[max(0, a - 4): a + 5]
-                if len(w) and w.max() > onset_thresh:
+                if onset_env[max(0, a - 4): a + 5].any():      # onset_env: re-articulation flags
                     break
             e += 1
         notes.append(Note(t0 + s * slot, t0 + e * slot, int(sl[s]), s, e - s))
