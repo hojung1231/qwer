@@ -78,7 +78,7 @@ def estimate_chords(mix_mono, vocal_mono, sr, t_bar1, beat, tonic, beats_per_cho
             T.append(v / np.linalg.norm(v)); lab.append((r, q))
     T = np.array(T)
     Cn = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9); Bn = B / (B.sum(1, keepdims=True) + 1e-9)
-    score = Cn @ T.T + 0.6 * Bn[:, [r for r, _ in lab]]
+    score = Cn @ T.T + 0.3 * Bn[:, [r for r, _ in lab]]
     # vocabulary of a major-key pop song: the six diatonic triads, plus (at a price) the usual
     # borrowed ones - secondary dominants II, III, VI, the flat VII and the minor iv
     diatonic = {((tonic + d) % 12, q) for d, q in ((0, ""), (2, "m"), (4, "m"), (5, ""), (7, ""), (9, "m"))}
