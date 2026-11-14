@@ -59,6 +59,30 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .empty svg{width:52px;height:52px;color:var(--hair);margin-bottom:6px}
 .empty b{color:var(--ink);font-size:1.1rem;font-weight:700}
 .note.err{color:var(--danger)}
+.ed-title{font-size:1.7rem;font-weight:900;letter-spacing:-.04em;line-height:1.15;margin:16px 0 4px}
+.cols,.row{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:10px}
+.cols{position:sticky;top:-14px;z-index:2;background:var(--bg);padding:12px 0 10px;margin-top:8px}
+.cols span{font-weight:900;font-size:.95rem;text-align:center;padding:9px 0;border-radius:12px;background:var(--raise)}
+.cols span b{display:inline-block;margin-left:6px;color:var(--muted);font-weight:700;font-variant-numeric:tabular-nums}
+.cols span.c0{color:var(--brand)}
+.rows{display:flex;flex-direction:column;gap:10px}
+.slot{border:1.5px dashed var(--hair);border-radius:16px;min-height:64px}
+.bundle{display:block;width:100%;text-align:left;border-radius:16px;padding:12px 13px;box-sizing:border-box;background:var(--raise);border:1.5px solid var(--hair);
+  font-size:.84rem;line-height:1.6;font-weight:500;min-height:64px;overflow-wrap:anywhere}
+.bundle.c0{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 12%,var(--raise))}
+.bundle small{display:block;color:var(--muted);font-size:.72rem;font-weight:700;margin-bottom:3px;font-variant-numeric:tabular-nums}
+.bundle.c0 small{color:var(--brand)}
+.bundle span{display:block}
+.bundle{cursor:pointer}
+.bundle::after{content:"";display:block;clear:both}
+.bundle:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.play{float:right;margin:-3px -4px 4px 8px;width:32px;height:32px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
+.play::before{content:"";border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent var(--bg);margin-left:3px}
+.play.on{background:var(--brand)}
+.play.on::before{border:0;width:10px;height:10px;border-radius:2px;background:var(--on-brand);margin:0}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(164px + env(safe-area-inset-bottom,0px));z-index:7;background:var(--ink);color:var(--bg);
+  font-weight:700;font-size:.86rem;padding:10px 16px;border-radius:999px;white-space:nowrap;max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis}
+.song.open{cursor:pointer}
 .soon{display:grid;place-items:center;min-height:55vh;color:var(--muted);text-align:center}
 
 .fab{position:fixed;right:max(20px,env(safe-area-inset-right,0px));bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:5;
@@ -79,7 +103,8 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .tab[aria-selected="true"]{color:var(--ink);background:var(--press)}
 .tab[aria-selected="true"] svg{color:var(--brand)}
 .tab:disabled{opacity:.4;cursor:default}
-@media (prefers-reduced-motion:no-preference){.song{transition:background .15s}.fab{transition:transform .12s}}
+@media (prefers-reduced-motion:no-preference){.bundle{animation:pop .18s ease}.song{transition:background .15s}.fab{transition:transform .12s}}
+@keyframes pop{from{transform:scale(.94);opacity:.4}}
 </style>
 
 <main class="gutter" id="main">
@@ -102,6 +127,18 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
     <ul class="songs" id="songs"></ul>
     <p class="note" id="note"></p>
   </section>
+  <section id="screen-edit" hidden>
+    <div class="empty" id="edEmpty" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="7" height="6" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="6" rx="1.8"/></svg>
+      <b>편집할 곡을 골라 주세요</b>
+      <span>‘내 음악창고’에서 화음 추출이 끝난 곡을 누르면<br>여기서 화음으로 연습할 소절을 고를 수 있어요.</span>
+    </div>
+    <h1 class="ed-title" id="edTitle"></h1>
+    <p class="sub" id="edSub"></p>
+    <div class="cols" id="edCols"></div>
+    <div class="rows" id="edRows"></div>
+    <p class="note" id="edNote"></p>
+  </section>
   <section id="screen-soon" class="soon" hidden><p>이 탭은 아직 만들지 않았습니다.</p></section>
 </main>
 
@@ -113,14 +150,16 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 </label>
 <input id="picker" class="sr-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple tabindex="-1" aria-hidden="true">
 
+<div class="toast" id="toast" role="status" hidden></div>
+
 <nav class="tabs" role="tablist" aria-label="화면 전환">
   <button class="tab" role="tab" aria-selected="true" data-screen="library" type="button">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 4.2v10.1a3.2 3.2 0 1 0 1.8 2.9V8.3l7-1.6v6a3.2 3.2 0 1 0 1.8 2.9V3.4a.9.9 0 0 0-1.1-.9l-8.8 2a.9.9 0 0 0-.7.9z"/></svg>
     내 음악창고
   </button>
-  <button class="tab" role="tab" aria-selected="false" disabled type="button">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7.5" stroke-dasharray="2.5 3.4"/></svg>
-    준비 중
+  <button class="tab" role="tab" aria-selected="false" data-screen="edit" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="7" height="6" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="6" rx="1.8"/><path d="M13.5 7.5h7M3.5 16.5h7" stroke-dasharray="1.5 2.6"/></svg>
+    소절 편집
   </button>
   <button class="tab" role="tab" aria-selected="false" disabled type="button">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7.5" stroke-dasharray="2.5 3.4"/></svg>
@@ -135,7 +174,10 @@ let songs=[], editing=false;
 // One example card, so the extract button can be tried before any file is added.
 // Its result is what our pipeline really produced for this song.
 const EXAMPLE={id:"ex-sungnyeoege",title:"숙녀에게",artist:"변진섭",album:"희망사항",dur:226,added:0,example:true,
-  result:{notes:258,key:"D장조",bpm:72,sig:"12/8"}};
+  result:{notes:258,key:"D장조",bpm:72,sig:"12/8"},
+  // only the opening words of each bundle: the example has no file to read the lyrics from
+  bundles:[["어쩌면…"],["그대의…"],["허면…"],["나 그…"],["나 그…"]].map((l,i)=>({from:i*4+1,to:i*4+4,lines:l.concat("(예시 곡은 첫머리만 표시합니다)")}))};
+try{ const p=JSON.parse(pref("ex_parts")||"null"); if(Array.isArray(p)) EXAMPLE.parts=p }catch(e){}
 const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("hw_"+k); localStorage.setItem("hw_"+k,v) }catch(e){} return null };
 EXAMPLE.state=pref("ex")==="done"?"done":undefined;
 let exampleHidden=pref("ex")==="hidden";
@@ -181,7 +223,7 @@ async function readTags(file){                       // ID3v2 title / artist / a
     const head=new Uint8Array(await file.slice(0,10).arrayBuffer());
     if(head[0]!==0x49||head[1]!==0x44||head[2]!==0x33) return out;
     const ver=head[3], size=(head[6]<<21)|(head[7]<<14)|(head[8]<<7)|head[9];
-    const b=new Uint8Array(await file.slice(10,10+Math.min(size,400000)).arrayBuffer()); let p=0;
+    const b=new Uint8Array(await file.slice(10,10+Math.min(size,1500000)).arrayBuffer()); let p=0;
     const idLen=ver===2?3:4, hdr=ver===2?6:10, want={TIT2:"title",TT2:"title",TPE1:"artist",TP1:"artist",TALB:"album",TAL:"album"};
     while(p+hdr<=b.length&&b[p]!==0){
       const id=String.fromCharCode(...b.subarray(p,p+idLen)); let len;
@@ -189,6 +231,9 @@ async function readTags(file){                       // ID3v2 title / artist / a
       else if(ver===4) len=(b[p+4]<<21)|(b[p+5]<<14)|(b[p+6]<<7)|b[p+7];
       else len=((b[p+4]<<24)|(b[p+5]<<16)|(b[p+6]<<8)|b[p+7])>>>0;
       if(len<=0) break;
+      if((id==="USLT"||id==="ULT")&&p+hdr+len<=b.length){ const body=b.subarray(p+hdr,p+hdr+len), enc=body[0]; let q=4;   // enc, lang(3), descriptor\0, text
+        if(enc===1||enc===2){ while(q+1<body.length&&!(body[q]===0&&body[q+1]===0)) q+=2; q+=2 } else { while(q<body.length&&body[q]!==0) q++; q++ }
+        out.lyrics=decodeText(body.subarray(q),enc).replace(/\0+$/,"") }
       if(want[id]&&p+hdr+len<=b.length){ const body=b.subarray(p+hdr,p+hdr+len); out[want[id]]=decodeText(body.subarray(1),body[0]).replace(/\0+$/,"").trim() }
       p+=hdr+len;
     }
@@ -208,7 +253,7 @@ async function addFiles(files){
     if(!/\.mp3$/i.test(f.name)&&!/mpeg|mp3/i.test(f.type||"")){ wrong++; continue }
     const [tag,dur]=await Promise.all([readTags(f),readDuration(f)]);
     const s={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:f.name,size:f.size,added:Date.now(),
-      title:tag.title||f.name.replace(/\.[^.]+$/,""),artist:tag.artist||"",album:tag.album||"",dur,blob:f};
+      title:tag.title||f.name.replace(/\.[^.]+$/,""),artist:tag.artist||"",album:tag.album||"",dur,lyrics:tag.lyrics||"",blob:f};
     songs.push(s); added++; render();
     if(!(await dbPut(s))) unsaved++;
   }
@@ -228,7 +273,9 @@ function render(){
   const list=(exampleHidden?[]:[EXAMPLE]).concat(songs.slice().sort((a,b)=>a.added-b.added)), ul=$("songs"); ul.textContent="";
   $("empty").hidden=list.length>0;
   for(const s of list){
-    const li=document.createElement("li"); li.className="song";
+    const li=document.createElement("li"); li.className="song"+(s.state==="done"?" open":"");
+    li.onclick=e=>{ if(editing||e.target.closest("button")) return;
+      if(s.state==="done") openEditor(s); else if(s.state!=="busy") toast("먼저 ‘화음 추출’을 눌러 주세요") };
     const art=document.createElement("div"); art.className="art"; art.textContent=(s.title||"?").trim().charAt(0); art.setAttribute("aria-hidden","true");
     const c=artwork(s.title||"?"); art.style.background=c.bg; art.style.setProperty("--shade",c.shade);
     const meta=document.createElement("div"); meta.className="meta";
@@ -240,6 +287,7 @@ function render(){
       d.textContent=`멜로디 ${s.result.notes}음 · ${s.result.key} · ${s.result.bpm}BPM · ${s.result.sig}`; meta.append(d) }
     if(editing){ const x=document.createElement("button"); x.className="del"; x.type="button"; x.setAttribute("aria-label",s.title+" 삭제");
       x.onclick=async()=>{ if(s.example){ exampleHidden=true; pref("ex","hidden") } else { songs=songs.filter(o=>o!==s); await dbDel(s.id) }
+        if(current===s){ current=null; closePlayer() }
         if(!songs.length&&exampleHidden) setEditing(false); render() }; li.append(x) }
     else if(s.state==="done"){ const d=document.createElement("span"); d.className="done";
       d.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -254,14 +302,91 @@ function render(){
 }
 function setEditing(v){ editing=v; $("editBtn").setAttribute("aria-pressed",v); $("editBtn").textContent=v?"완료":"편집" }
 
+// ---------------------------------------------------------------- practice editor
+// Which parts of the song to practise harmony on.  The lyrics are cut into bundles of four lines,
+// one bundle per row; a bundle sits in the column it is assigned to and a tap moves it to the next.
+const COLS=["화음","솔로"], PER_BUNDLE=4;
+// Where each bundle is sung, in seconds.  Finding this needs the real extraction, which has no
+// server yet; for the three songs already analysed the measured ranges are built in, matched by title.
+const TIMES={"사랑했지만":[[16.2,39.4],[40.9,64.4],[65.5,87.1],[86.3,110.9],[110.9,129.0],[129.4,178.6],[178.6,203.3],[202.5,219.4],[218.6,246.8]],"숙녀에게":[[30.6,59.7],[58.9,84.6],[83.8,144.7],[143.9,171.3],[170.5,202.4]],"청혼":[[23.9,48.4],[47.6,71.4],[71.6,93.6],[93.6,123.6],[122.8,139.8],[139.0,165.4],[164.6,184.0],[183.2,188.2]]};
+const player=new Audio(); let playing=-1, playUrl=null, stopAt=0;
+player.ontimeupdate=()=>{ if(playing>=0&&player.currentTime>=stopAt) stopPlay() };
+player.onended=()=>stopPlay();
+function stopPlay(){ if(playing<0) return; player.pause(); playing=-1; for(const b of document.querySelectorAll(".play")) b.classList.remove("on") }
+function playBundle(s,b,i,btn){
+  if(playing===i){ stopPlay(); return }
+  if(!s.blob){ toast("예시 곡은 파일이 없어 들을 수 없어요. 같은 곡 mp3를 추가해 보세요"); return }
+  if(!b.t){ toast("이 곡은 아직 소절 위치를 모릅니다 (실제 추출 연결 후 가능)"); return }
+  stopPlay();
+  if(!playUrl){ try{ playUrl=URL.createObjectURL(s.blob); player.src=playUrl }catch(e){ toast("이 파일을 재생할 수 없습니다"); return } }
+  stopAt=b.t[1]; playing=i; btn.classList.add("on");
+  const go=()=>{ try{ player.currentTime=b.t[0] }catch(e){} player.play().catch(()=>{ stopPlay(); toast("재생을 시작하지 못했습니다") }) };
+  if(player.readyState>=1) go(); else player.addEventListener("loadedmetadata",go,{once:true});
+}
+const mmss=t=>Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0");
+let current=null;
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>{ t.hidden=true },2200) }
+async function bundlesOf(s){
+  const times=TIMES[(s.title||"").trim()]||[];
+  if(s.example) return s.bundles.map((b,i)=>({...b,t:times[i]||null}));
+  if(s.lyrics===undefined&&s.blob){ s.lyrics=(await readTags(s.blob)).lyrics||""; dbPut(s) }   // songs added before lyrics were read
+  const lines=(s.lyrics||"").replace(/\r/g,"").split("\n").map(l=>l.trim()).filter(Boolean), out=[];
+  for(let i=0;i<lines.length;i+=PER_BUNDLE) out.push({from:i+1,to:Math.min(lines.length,i+PER_BUNDLE),lines:lines.slice(i,i+PER_BUNDLE),t:times[i/PER_BUNDLE]||null});
+  return out;
+}
+function saveParts(s){ if(s.example) pref("ex_parts",JSON.stringify(s.parts)); else dbPut(s) }
+async function openEditor(s){
+  if(current!==s) closePlayer();
+  current=s; pref("last",s.id); const bs=await bundlesOf(s);
+  if(!Array.isArray(s.parts)||s.parts.length!==bs.length) s.parts=bs.map(()=>0);          // everything starts under 화음
+  $("edTitle").textContent=s.title;
+  $("edNote").textContent=bs.length?"":"이 mp3 안에 가사가 없어서 묶음을 만들 수 없습니다.";
+  show("edit"); renderEditor(bs);
+}
+function renderEditor(bs){
+  const s=current, cols=$("edCols"), rows=$("edRows"); cols.style.setProperty("--n",COLS.length); cols.textContent=""; rows.textContent="";
+  COLS.forEach((name,c)=>{ const h=document.createElement("span"); h.className="c"+c; h.textContent=name;
+    const n=document.createElement("b"); n.textContent=s.parts.filter(p=>p===c).length; h.append(n); cols.append(h) });
+  bs.forEach((b,i)=>{ const row=document.createElement("div"); row.className="row"; row.style.setProperty("--n",COLS.length);
+    COLS.forEach((name,c)=>{
+      if(s.parts[i]!==c){ const e=document.createElement("div"); e.className="slot"; row.append(e); return }
+      // the bundle is the tap target for moving; the play button inside it must not move it
+      const btn=document.createElement("div"); btn.className="bundle c"+c; btn.setAttribute("role","button"); btn.tabIndex=0;
+      const next=COLS[(c+1)%COLS.length]; btn.setAttribute("aria-label",`${b.from}~${b.to}번째 줄, 지금 ${name}. 누르면 ${next}(으)로 옮깁니다`);
+      const pl=document.createElement("button"); pl.type="button"; pl.className="play"+(playing===i?" on":""); pl.setAttribute("aria-label",`${b.from}~${b.to}번째 줄 원곡 듣기`);
+      pl.onclick=e=>{ e.stopPropagation(); playBundle(s,b,i,pl) }; btn.append(pl);
+      const sm=document.createElement("small"); sm.textContent=(b.from===b.to?`${b.from}번째 줄`:`${b.from}~${b.to}번째 줄`)+(b.t?` · ${mmss(b.t[0])}`:""); btn.append(sm);
+      for(const l of b.lines){ const sp=document.createElement("span"); sp.textContent=l; btn.append(sp) }
+      const move=()=>{ s.parts[i]=(c+1)%COLS.length; saveParts(s); renderEditor(bs) };
+      btn.onclick=move; btn.onkeydown=e=>{ if((e.key==="Enter"||e.key===" ")&&e.target===btn){ e.preventDefault(); move() } };
+      row.append(btn) });
+    rows.append(row) });
+  $("edSub").textContent=bs.length?`묶음을 누르면 ${COLS.join(" ↔ ")}로 옮겨집니다 · `+COLS.map((n,c)=>`${n} ${s.parts.filter(p=>p===c).length}`).join(" · "):"";
+}
+function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } }
+function show(name){
+  if(name!=="edit") stopPlay();
+  $("screen-library").hidden=name!=="library"; $("screen-edit").hidden=name!=="edit"; $("screen-soon").hidden=name!=="soon";
+  $("addBtn").hidden=name!=="library"; $("picker").disabled=name!=="library";
+  $("editBtn").hidden=name!=="library"||!(songs.length||!exampleHidden);
+  for(const o of document.querySelectorAll(".tab")) o.setAttribute("aria-selected",o.dataset.screen===name);
+  if(name==="edit"){ const has=!!current; $("edEmpty").hidden=has; for(const id of ["edTitle","edSub","edCols","edRows","edNote"]) $(id).hidden=!has }
+  if(name==="library") render();
+  $("main").scrollTop=0;
+}
+// the second tab reopens the song edited last, if it is still there and extracted
+function openEditTab(){
+  const all=(exampleHidden?[]:[EXAMPLE]).concat(songs), s=current&&all.includes(current)?current:all.find(o=>o.id===pref("last")&&o.state==="done");
+  if(s&&s.state==="done") openEditor(s); else { current=null; closePlayer(); show("edit") }
+}
+
 // ---------------------------------------------------------------- wiring
 $("addBtn").onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); $("picker").click() } };
 $("picker").onchange=async e=>{ const fs=[...e.target.files]; e.target.value=""; if(fs.length){ $("note").textContent=""; await addFiles(fs) } };
 $("editBtn").onclick=()=>{ setEditing(!editing); render() };
 for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
   if(t.disabled) return;
-  for(const o of document.querySelectorAll(".tab")) o.setAttribute("aria-selected",o===t);
-  $("screen-library").hidden=t.dataset.screen!=="library"; $("screen-soon").hidden=t.dataset.screen==="library"; $("addBtn").hidden=t.dataset.screen!=="library";
+  if(t.dataset.screen==="edit") openEditTab(); else show(t.dataset.screen==="library"?"library":"soon");
 };
 render();
 dbAll().then(rows=>{ if(rows.length){ songs=rows; $("note").textContent=""; render() } });
