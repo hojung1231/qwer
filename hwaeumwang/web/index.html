@@ -60,6 +60,12 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .empty b{color:var(--ink);font-size:1.1rem;font-weight:700}
 .note.err{color:var(--danger)}
 .ed-title{font-size:1.7rem;font-weight:900;letter-spacing:-.04em;line-height:1.15;margin:16px 0 4px}
+.label{font-size:.82rem;font-weight:700;color:var(--muted);margin:22px 0 9px}
+.seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--raise)}
+.seg button{padding:10px 4px;border-radius:10px;font-weight:700;font-size:.9rem;color:var(--muted)}
+.seg button[aria-checked="true"]{background:var(--brand);color:var(--on-brand);font-weight:900}
+.seg-desc{color:var(--muted);font-size:.84rem;margin:9px 2px 0;min-height:1.5em}
+#edStyle + .sub{margin:0 0 2px}
 .cols,.row{display:grid;grid-template-columns:repeat(var(--n,2),minmax(0,1fr));gap:10px}
 .cols{position:sticky;top:-14px;z-index:2;background:var(--bg);padding:12px 0 10px;margin-top:8px}
 .cols span{font-weight:900;font-size:.95rem;text-align:center;padding:9px 0;border-radius:12px;background:var(--raise)}
@@ -134,6 +140,12 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <span>‘내 음악창고’에서 화음 추출이 끝난 곡을 누르면<br>여기서 화음으로 연습할 소절을 고를 수 있어요.</span>
     </div>
     <h1 class="ed-title" id="edTitle"></h1>
+    <div id="edStyle">
+      <h2 class="label">화음 구성</h2>
+      <div class="seg" id="seg" role="radiogroup" aria-label="화음 구성"></div>
+      <p class="seg-desc" id="segDesc"></p>
+      <h2 class="label">연습할 소절</h2>
+    </div>
     <p class="sub" id="edSub"></p>
     <div class="cols" id="edCols"></div>
     <div class="rows" id="edRows"></div>
@@ -178,6 +190,7 @@ const EXAMPLE={id:"ex-sungnyeoege",title:"숙녀에게",artist:"변진섭",album
   // only the opening words of each bundle: the example has no file to read the lyrics from
   bundles:[["어쩌면…"],["그대의…"],["허면…"],["나 그…"],["나 그…"]].map((l,i)=>({from:i*4+1,to:i*4+4,lines:l.concat("(예시 곡은 첫머리만 표시합니다)")}))};
 try{ const p=JSON.parse(pref("ex_parts")||"null"); if(Array.isArray(p)) EXAMPLE.parts=p }catch(e){}
+EXAMPLE.style=pref("ex_style")||"up";
 const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("hw_"+k); localStorage.setItem("hw_"+k,v) }catch(e){} return null };
 EXAMPLE.state=pref("ex")==="done"?"done":undefined;
 let exampleHidden=pref("ex")==="hidden";
@@ -306,6 +319,15 @@ function setEditing(v){ editing=v; $("editBtn").setAttribute("aria-pressed",v); 
 // Which parts of the song to practise harmony on.  The lyrics are cut into bundles of four lines,
 // one bundle per row; a bundle sits in the column it is assigned to and a tap moves it to the next.
 const COLS=["화음","솔로"], PER_BUNDLE=4;
+// How the harmony line is written for the whole song (the three versions our generator makes).
+const STYLES=[["up","3도 위","멜로디보다 3도 높게 따라갑니다. 밝고 또렷한, 가장 흔한 화음입니다."],
+  ["down","3도 아래","멜로디보다 3도 낮게 받쳐 줍니다. 따뜻하고 부르기 편한 화음입니다."],
+  ["arranged","편곡","소절마다 위·아래와 음정을 골라, 음을 붙잡거나 반대로 움직이는 화음입니다."]];
+function renderStyle(){
+  const s=current, seg=$("seg"); seg.textContent=""; if(!STYLES.some(x=>x[0]===s.style)) s.style="up";
+  for(const [id,name,desc] of STYLES){ const b=document.createElement("button"); b.type="button"; b.textContent=name; b.setAttribute("role","radio"); b.setAttribute("aria-checked",s.style===id);
+    b.onclick=()=>{ s.style=id; if(s.example) pref("ex_style",id); else dbPut(s); renderStyle() }; seg.append(b); if(s.style===id) $("segDesc").textContent=desc }
+}
 // Where each bundle is sung, in seconds.  Finding this needs the real extraction, which has no
 // server yet; for the three songs already analysed the measured ranges are built in, matched by title.
 const TIMES={"사랑했지만":[[16.2,39.4],[40.9,64.4],[65.5,87.1],[86.3,110.9],[110.9,129.0],[129.4,178.6],[178.6,203.3],[202.5,219.4],[218.6,246.8]],"숙녀에게":[[30.6,59.7],[58.9,84.6],[83.8,144.7],[143.9,171.3],[170.5,202.4]],"청혼":[[23.9,48.4],[47.6,71.4],[71.6,93.6],[93.6,123.6],[122.8,139.8],[139.0,165.4],[164.6,184.0],[183.2,188.2]]};
@@ -341,7 +363,7 @@ async function openEditor(s){
   if(!Array.isArray(s.parts)||s.parts.length!==bs.length) s.parts=bs.map(()=>0);          // everything starts under 화음
   $("edTitle").textContent=s.title;
   $("edNote").textContent=bs.length?"":"이 mp3 안에 가사가 없어서 묶음을 만들 수 없습니다.";
-  show("edit"); renderEditor(bs);
+  show("edit"); renderStyle(); renderEditor(bs);
 }
 function renderEditor(bs){
   const s=current, cols=$("edCols"), rows=$("edRows"); cols.style.setProperty("--n",COLS.length); cols.textContent=""; rows.textContent="";
@@ -361,7 +383,7 @@ function renderEditor(bs){
       btn.onclick=move; btn.onkeydown=e=>{ if((e.key==="Enter"||e.key===" ")&&e.target===btn){ e.preventDefault(); move() } };
       row.append(btn) });
     rows.append(row) });
-  $("edSub").textContent=bs.length?`묶음을 누르면 ${COLS.join(" ↔ ")}로 옮겨집니다 · `+COLS.map((n,c)=>`${n} ${s.parts.filter(p=>p===c).length}`).join(" · "):"";
+  $("edSub").textContent=bs.length?`묶음을 누르면 ${COLS.join(" ↔ ")}로 옮겨집니다.`:"";
 }
 function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } }
 function show(name){
@@ -370,7 +392,7 @@ function show(name){
   $("addBtn").hidden=name!=="library"; $("picker").disabled=name!=="library";
   $("editBtn").hidden=name!=="library"||!(songs.length||!exampleHidden);
   for(const o of document.querySelectorAll(".tab")) o.setAttribute("aria-selected",o.dataset.screen===name);
-  if(name==="edit"){ const has=!!current; $("edEmpty").hidden=has; for(const id of ["edTitle","edSub","edCols","edRows","edNote"]) $(id).hidden=!has }
+  if(name==="edit"){ const has=!!current; $("edEmpty").hidden=has; for(const id of ["edTitle","edStyle","edSub","edCols","edRows","edNote"]) $(id).hidden=!has }
   if(name==="library") render();
   $("main").scrollTop=0;
 }
