@@ -46,6 +46,9 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .del::before{content:"";width:12px;height:2.5px;border-radius:2px;background:#fff}
 .note{color:var(--muted);font-size:.84rem;line-height:1.6;margin:18px 0 0;padding:14px 16px;background:var(--raise);border-radius:16px}
 .note:empty{display:none}
+.empty{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:64px 12px 0;color:var(--muted);font-size:.9rem;line-height:1.6}
+.empty svg{width:52px;height:52px;color:var(--hair);margin-bottom:6px}
+.empty b{color:var(--ink);font-size:1.1rem;font-weight:700}
 .note.err{color:var(--danger)}
 .soon{display:grid;place-items:center;min-height:55vh;color:var(--muted);text-align:center}
 
@@ -54,6 +57,9 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
   font-weight:900;box-shadow:0 12px 28px -10px var(--brand)}
 .fab svg{width:20px;height:20px}
 .fab:active{transform:scale(.97)}
+.fab{cursor:pointer;user-select:none;-webkit-user-select:none}
+.fab:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.sr-file{position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none}
 
 .tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:6;
   width:min(360px,calc(100% - 2*max(20px,env(safe-area-inset-left,0px))));display:flex;padding:6px;border-radius:999px;
@@ -79,17 +85,24 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
   <section id="screen-library">
     <h1>내 음악창고</h1>
     <p class="sub" id="count">아직 넣은 곡이 없습니다</p>
+    <div class="empty" id="empty">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 4.2v10.1a3.2 3.2 0 1 0 1.8 2.9V8.3l7-1.6v6a3.2 3.2 0 1 0 1.8 2.9V3.4a.9.9 0 0 0-1.1-.9l-8.8 2a.9.9 0 0 0-.7.9z"/></svg>
+      <b>창고가 비어 있어요</b>
+      <span>아래 ‘곡 추가’를 눌러 휴대폰에 있는 mp3 파일을 고르세요.<br>파일은 이 기기 안에만 저장됩니다.</span>
+    </div>
     <ul class="songs" id="songs"></ul>
     <p class="note" id="note"></p>
-    <input id="picker" type="file" accept="audio/*,.mp3,.flac,.m4a,.wav,.ogg" multiple hidden>
   </section>
   <section id="screen-soon" class="soon" hidden><p>이 탭은 아직 만들지 않았습니다.</p></section>
 </main>
 
-<button class="fab" id="addBtn" type="button">
+<!-- The button is a label for the file input itself: tapping it opens the phone's file picker directly,
+     which works in browsers and in-app views that ignore a scripted click on a hidden input. -->
+<label class="fab" id="addBtn" for="picker" role="button" tabindex="0">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
   곡 추가
-</button>
+</label>
+<input id="picker" class="sr-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple tabindex="-1" aria-hidden="true">
 
 <nav class="tabs" role="tablist" aria-label="화면 전환">
   <button class="tab" role="tab" aria-selected="true" data-screen="library" type="button">
@@ -109,12 +122,6 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
-// Shown until the first real file is added, so the list is never an empty shell.
-const EXAMPLES=[
-  {id:"ex1",title:"사랑했지만",artist:"김광석",dur:268,example:true},
-  {id:"ex2",title:"숙녀에게",artist:"변진섭",dur:226,example:true},
-  {id:"ex3",title:"청혼",artist:"노을",dur:267,example:true},
-];
 let songs=[], editing=false;
 
 // ---------------------------------------------------------------- storage (this device only)
@@ -161,10 +168,11 @@ function readDuration(file){
     setTimeout(()=>fin(0),4000); try{ a.src=URL.createObjectURL(file) }catch(e){ fin(0) } });
 }
 async function addFiles(files){
-  const note=$("note"); note.className="note"; let added=0, skipped=0, unsaved=0;
+  const note=$("note"); note.className="note"; let added=0, skipped=0, unsaved=0, wrong=0;
   for(const f of files){
     if(songs.some(s=>s.name===f.name&&s.size===f.size)){ skipped++; continue }
     note.textContent=`읽는 중: ${f.name}`;
+    if(!/\.mp3$/i.test(f.name)&&!/mpeg|mp3/i.test(f.type||"")){ wrong++; continue }
     const [tag,dur]=await Promise.all([readTags(f),readDuration(f)]);
     const s={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:f.name,size:f.size,added:Date.now(),
       title:tag.title||f.name.replace(/\.[^.]+$/,""),artist:tag.artist||"",album:tag.album||"",dur,blob:f};
@@ -172,6 +180,7 @@ async function addFiles(files){
     if(!(await dbPut(s))) unsaved++;
   }
   const parts=[]; if(skipped) parts.push(`이미 있는 ${skipped}곡은 건너뛰었습니다.`);
+  if(wrong) parts.push(`mp3가 아닌 파일 ${wrong}개는 넣지 않았습니다.`);
   if(unsaved){ parts.push(`${unsaved}곡은 이 기기에 저장하지 못해 페이지를 닫으면 사라집니다.`); note.className="note err" }
   note.textContent=parts.join(" ");
 }
@@ -183,7 +192,8 @@ function artwork(title){                               // a stable colour pair p
   return {bg:`linear-gradient(140deg,hsl(${h} 78% 58%),hsl(${(h+48)%360} 72% 40%))`,shade:`hsl(${(h+48)%360} 72% 30%)`};
 }
 function render(){
-  const list=songs.length?songs.slice().sort((a,b)=>a.added-b.added):EXAMPLES, ul=$("songs"); ul.textContent="";
+  const list=songs.slice().sort((a,b)=>a.added-b.added), ul=$("songs"); ul.textContent="";
+  $("empty").hidden=songs.length>0;
   for(const s of list){
     const li=document.createElement("li"); li.className="song";
     const art=document.createElement("div"); art.className="art"; art.textContent=(s.title||"?").trim().charAt(0); art.setAttribute("aria-hidden","true");
@@ -192,8 +202,7 @@ function render(){
     const b=document.createElement("b"); b.textContent=s.title;
     const sp=document.createElement("span"); sp.textContent=[s.artist||"가수 정보 없음",s.album].filter(Boolean).join(" · ");
     meta.append(b,sp); li.append(art,meta);
-    if(s.example){ const t=document.createElement("span"); t.className="chip"; t.textContent="예시"; li.append(t) }
-    if(editing&&!s.example){ const x=document.createElement("button"); x.className="del"; x.type="button"; x.setAttribute("aria-label",s.title+" 삭제");
+    if(editing){ const x=document.createElement("button"); x.className="del"; x.type="button"; x.setAttribute("aria-label",s.title+" 삭제");
       x.onclick=async()=>{ songs=songs.filter(o=>o!==s); await dbDel(s.id); if(!songs.length) setEditing(false); render() }; li.append(x) }
     else { const d=document.createElement("span"); d.className="dur"; d.textContent=fmt(s.dur); li.append(d) }
     ul.append(li);
@@ -201,12 +210,11 @@ function render(){
   const total=songs.reduce((a,s)=>a+(s.dur||0),0);
   $("count").textContent=songs.length?`${songs.length}곡 · ${Math.floor(total/60)}분`:"아직 넣은 곡이 없습니다";
   $("editBtn").hidden=!songs.length;
-  if(!songs.length&&!$("note").textContent) $("note").textContent="위 세 곡은 화면 예시입니다. ‘곡 추가’로 휴대폰의 음악 파일을 고르면 그 곡들로 바뀝니다. 파일은 이 기기 안에만 저장됩니다.";
 }
 function setEditing(v){ editing=v; $("editBtn").setAttribute("aria-pressed",v); $("editBtn").textContent=v?"완료":"편집" }
 
 // ---------------------------------------------------------------- wiring
-$("addBtn").onclick=()=>$("picker").click();
+$("addBtn").onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); $("picker").click() } };
 $("picker").onchange=async e=>{ const fs=[...e.target.files]; e.target.value=""; if(fs.length){ $("note").textContent=""; await addFiles(fs) } };
 $("editBtn").onclick=()=>{ setEditing(!editing); render() };
 for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
