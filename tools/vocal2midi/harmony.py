@@ -262,6 +262,35 @@ class Voice:
         y = self.pw.synthesize(self.f0 * 2.0 ** (shift / 12.0), self.sp, self.ap, self.sr, 5.0)[:len(self.x)]
         return (y * np.interp(np.arange(len(y)) / self.sr, tt, gain)).astype(np.float32)
 
+    def from_score(self, mel, pitches, tuning_cents=0.0, glide_s=0.06, vib_cents=18.0, vib_hz=5.5):
+        """Sing the written harmony notes with the singer's timbre and words.
+
+        Only the spectral envelope (timbre, vowels, consonants) and the voiced/unvoiced
+        pattern are taken from the recording; the pitch comes from the score: each note is
+        held at its exact pitch, joined to the next by a short glide, with a light vibrato
+        that fades in on held notes so it does not sound like a machine."""
+        tt = self.tt; dt = tt[1] - tt[0]
+        target = np.zeros(len(tt)); gain = np.zeros(len(tt)); vib = np.zeros(len(tt))
+        for (t, d, _), h in zip(mel, pitches):
+            if h <= 0:
+                continue
+            k = (tt >= t - 0.03) & (tt < t + d + 0.03)
+            target[k] = h + tuning_cents / 100.0; gain[k] = 1.0
+            age = tt[k] - t                                         # vibrato grows in after 0.3 s
+            vib[k] = np.clip((age - 0.3) / 0.4, 0.0, 1.0) * np.sin(2 * np.pi * vib_hz * age) * vib_cents / 100.0
+        for i in range(1, len(target)):                             # fill gaps so glides have two ends
+            if target[i] == 0:
+                target[i] = target[i - 1]
+        first = np.flatnonzero(target)
+        if len(first):
+            target[:first[0]] = target[first[0]]
+        w = max(3, int(glide_s / dt) | 1); ker = np.hanning(w + 2)[1:-1]; ker /= ker.sum()
+        target = np.convolve(np.pad(target, w // 2, mode="edge"), ker, mode="valid") + vib
+        ker = np.hanning(13); ker /= ker.sum(); gain = np.convolve(gain, ker, mode="same")
+        f0 = np.where(self.f0 > 0, 440.0 * 2.0 ** ((target - 69.0) / 12.0), 0.0)
+        y = self.pw.synthesize(f0, self.sp, self.ap, self.sr, 5.0)[:len(self.x)]
+        return (y * np.interp(np.arange(len(y)) / self.sr, tt, gain)).astype(np.float32)
+
 
 def write_midi(path, mel, lines, bpm, origin, div):
     tpb = 480; q_bpm = bpm * (1.5 if div % 3 == 0 else 1.0)
@@ -289,6 +318,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out_dir"); ap.add_argument("audio")
     ap.add_argument("--only", default="ABC"); ap.add_argument("--name", default="harmony")
+    ap.add_argument("--pitch-source", choices=["voice", "score"], default="voice",
+                    help="voice: move the singer's own pitch curve by the interval; "
+                         "score: sing the written harmony notes at exact pitch (singer's timbre and words kept)")
     ap.add_argument("--harmony-db", type=float, default=-5.0, help="level of each harmony voice relative to the lead")
     a = ap.parse_args()
     sr = 44100
@@ -309,7 +341,10 @@ def main():
     voice = Voice(vocal, sr)
     for v in a.only:
         lines = versions[v]
-        parts = [voice.shifted(mel, np.where(p > 0, p - mel[:, 2], 0)) for _, p in lines]
+        if a.pitch_source == "score":
+            parts = [voice.from_score(mel, p, rep.get("tuning_cents", 0.0)) for _, p in lines]
+        else:
+            parts = [voice.shifted(mel, np.where(p > 0, p - mel[:, 2], 0)) for _, p in lines]
         n = min(stereo.shape[1], len(parts[0])); voices = sum(parts)
         # harmony voices sit a little to the sides, as backing vocals are usually mixed
         outp = stereo[:, :n].copy()
