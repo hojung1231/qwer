@@ -85,7 +85,8 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .play{float:right;margin:-3px -4px 4px 8px;width:32px;height:32px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
 .play::before{content:"";border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent var(--bg);margin-left:3px}
 .play.on{background:var(--brand)}
-.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;margin-top:10px;padding:3px;border-radius:10px;background:var(--bg);clear:both}
+.bundle .tag{display:inline-block;clear:both;font-style:normal;font-size:.7rem;font-weight:700;color:var(--on-brand);background:var(--brand);border-radius:999px;padding:2px 9px;margin-top:9px}
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;margin-top:8px;padding:3px;border-radius:10px;background:var(--bg);clear:both}
 .modes button{padding:6px 0;border-radius:8px;font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap}
 .modes button[aria-checked="true"]{background:var(--brand);color:var(--on-brand)}
 .play.on::before{border:0;width:10px;height:10px;border-radius:2px;background:var(--on-brand);margin:0}
@@ -197,6 +198,7 @@ EXAMPLE.state=pref("ex")==="done"?"done":undefined;
 try{ const p=JSON.parse(pref("ex_parts")||"null"); if(Array.isArray(p)) EXAMPLE.parts=p }catch(e){}
 EXAMPLE.style=pref("ex_style")||"up";
 try{ const p=JSON.parse(pref("ex_modes")||"null"); if(Array.isArray(p)) EXAMPLE.modes=p }catch(e){}
+try{ const p=JSON.parse(pref("ex_before")||"null"); if(Array.isArray(p)) EXAMPLE.partsBefore=p }catch(e){}
 let exampleHidden=pref("ex")==="hidden";
 // No server is connected to this prototype yet, so extraction only counts up to 100%.
 // The estimate follows the song's length; the real job takes about a minute for a four-minute song.
@@ -330,9 +332,27 @@ const STYLES=[["up","3도 위","멜로디보다 3도 높게 따라갑니다. 밝
 function renderStyle(){
   const s=current, seg=$("seg"); seg.textContent=""; if(!STYLES.some(x=>x[0]===s.style)) s.style="up";
   for(const [id,name,desc] of STYLES){ const b=document.createElement("button"); b.type="button"; b.textContent=name; b.setAttribute("role","radio"); b.setAttribute("aria-checked",s.style===id);
-    // choosing here sets every bundle; single bundles can then be changed on their own cards
-    b.onclick=()=>{ s.style=id; s.modes=(s.parts||[]).map(()=>id); saveParts(s); stopPlay(); renderStyle(); if(lastBundles) renderEditor(lastBundles) };
-    seg.append(b); if(s.style===id) $("segDesc").textContent=desc+" 고르면 모든 묶음에 적용되고, 묶음마다 따로 바꿀 수도 있어요." }
+    b.onclick=()=>{ if(s.style!==id) chooseStyle(s,id) };
+    seg.append(b); if(s.style===id) $("segDesc").textContent=desc+(id==="arranged"
+      ?(ARRANGED[(s.title||"").trim()]?" 편곡 화음이 들어가는 묶음만 화음 열에 남기고 나머지는 솔로로 보냈어요.":" 이 곡은 아직 편곡 결과가 없어 묶음을 나누지 못했어요 (실제 추출 연결 후 가능).")
+      :" 모든 묶음에 적용되고, 묶음마다 3도 위·아래를 따로 바꿀 수 있어요.") }
+}
+// Which bundles the arranged voice actually sings in (1) and which it leaves to the lead alone (0);
+// measured from the arranged harmony written for each analysed song.
+const ARRANGED={"사랑했지만":[0,0,1,1,1,0,1,1,1],"숙녀에게":[0,1,1,1,1],"청혼":[0,1,1,0,0,1,1,1]};
+// A third above or below is a choice per bundle.  "Arranged" is a plan for the whole song: it also
+// decides where harmony is sung at all, so choosing it sorts the bundles into 화음 and 솔로.
+function chooseStyle(s,id){
+  const n=(s.parts||[]).length, plan=ARRANGED[(s.title||"").trim()];
+  if(id==="arranged"){
+    s.partsBefore=s.parts.slice();                                  // remembered, to put back when leaving 편곡
+    if(plan&&plan.length===n) s.parts=plan.map(v=>v?0:1);
+    s.modes=s.parts.map(()=>"arranged");
+  }else{
+    if(s.style==="arranged"&&Array.isArray(s.partsBefore)&&s.partsBefore.length===n) s.parts=s.partsBefore.slice();
+    s.partsBefore=null; s.modes=s.parts.map(()=>id);
+  }
+  s.style=id; saveParts(s); stopPlay(); renderStyle(); if(lastBundles) renderEditor(lastBundles);
 }
 let lastBundles=null;
 // Harmony voices made for the three analysed songs (one file per style), played over the original.
@@ -383,7 +403,7 @@ async function bundlesOf(s){
   for(let i=0;i<lines.length;i+=PER_BUNDLE) out.push({from:i+1,to:Math.min(lines.length,i+PER_BUNDLE),lines:lines.slice(i,i+PER_BUNDLE),t:times[i/PER_BUNDLE]||null});
   return out;
 }
-function saveParts(s){ if(s.example){ pref("ex_parts",JSON.stringify(s.parts)); pref("ex_modes",JSON.stringify(s.modes)); pref("ex_style",s.style) } else dbPut(s) }
+function saveParts(s){ if(s.example){ pref("ex_parts",JSON.stringify(s.parts)); pref("ex_modes",JSON.stringify(s.modes)); pref("ex_style",s.style); pref("ex_before",JSON.stringify(s.partsBefore||null)) } else dbPut(s) }
 async function openEditor(s){
   if(current!==s) closePlayer();
   current=s; pref("last",s.id); const bs=await bundlesOf(s);
@@ -412,10 +432,16 @@ function renderEditor(bs){
       for(const l of b.lines){ const sp=document.createElement("span"); sp.textContent=l; btn.append(sp) }
       if(c===0){                                                    // harmony style of this bundle alone
         const ms=document.createElement("div"); ms.className="modes"; ms.setAttribute("role","radiogroup"); ms.setAttribute("aria-label","이 묶음의 화음");
-        for(const [id] of STYLES){ const mb=document.createElement("button"); mb.type="button"; mb.textContent=STYLE_SHORT[id]; mb.setAttribute("role","radio"); mb.setAttribute("aria-checked",s.modes[i]===id);
+        if(s.modes[i]==="arranged"){ const tg=document.createElement("em"); tg.className="tag"; tg.textContent="편곡 화음"; btn.append(tg) }
+        for(const [id] of STYLES){ if(id==="arranged") continue; const mb=document.createElement("button"); mb.type="button"; mb.textContent=STYLE_SHORT[id]; mb.setAttribute("role","radio"); mb.setAttribute("aria-checked",s.modes[i]===id);
           mb.onclick=e=>{ e.stopPropagation(); if(s.modes[i]===id) return; s.modes[i]=id; saveParts(s); if(playing===i) stopPlay(); renderEditor(bs) }; ms.append(mb) }
         btn.append(ms) }
-      const move=()=>{ if(playing===i) stopPlay(); s.parts[i]=(c+1)%COLS.length; saveParts(s); renderEditor(bs) };
+      const move=()=>{ if(playing===i) stopPlay(); s.parts[i]=(c+1)%COLS.length;
+        // a bundle brought into 화음 where the arranged voice is silent gets a third above instead
+        const plan=ARRANGED[(s.title||"").trim()];
+        if(s.parts[i]===0&&s.modes[i]==="arranged"&&!(plan&&plan[i])) s.modes[i]="up";
+        if(s.parts[i]===0&&s.style==="arranged"&&plan&&plan[i]) s.modes[i]="arranged";
+        saveParts(s); renderEditor(bs) };
       btn.onclick=move; btn.onkeydown=e=>{ if((e.key==="Enter"||e.key===" ")&&e.target===btn){ e.preventDefault(); move() } };
       row.append(btn) });
     rows.append(row) });
