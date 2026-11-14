@@ -46,6 +46,7 @@ def demucs_extract(stereo: np.ndarray, sr: int, stereo_out: bool = False) -> np.
     from demucs.apply import apply_model
     model = get_model("htdemucs")
     model.eval()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     x = torch.from_numpy(stereo)[None]
     if sr != model.samplerate:
         import torchaudio
@@ -54,7 +55,7 @@ def demucs_extract(stereo: np.ndarray, sr: int, stereo_out: bool = False) -> np.
     mu, sd = ref.mean(), ref.std() + 1e-8
     x = (x - mu) / sd
     with torch.no_grad():
-        out = apply_model(model, x, shifts=1, overlap=0.25, progress=False)[0]
+        out = apply_model(model, x, shifts=1, overlap=0.25, progress=False, device=device)[0].cpu()
     out = out * sd + mu                      # back to the level of the original recording
     v = out[model.sources.index("vocals")].numpy()            # (2, n): keep the stereo image
     if sr != model.samplerate:

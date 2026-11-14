@@ -66,6 +66,8 @@ def main():
     sr = 44100
     f0_path = os.path.join(a.out, "f0.npz")
 
+    import time
+    timings, clock = {}, time.time()
     stereo = isolate.decode(a.audio, sr)
     mono = stereo.mean(0)
     if a.cache and os.path.exists(f0_path):
@@ -76,12 +78,15 @@ def main():
             vocal, sep = isolate.decode(a.vocal, sr).mean(0), "external"
         else:
             vocal, sep = isolate.isolate(stereo, sr, a.separator, a.lead_only)
+        timings["separation_s"] = round(time.time() - clock, 1); clock = time.time()
         import soundfile as sf
         sf.write(os.path.join(a.out, "vocal.wav"), vocal, sr)
         t, f0, per, rms = pitch.track(vocal, sr)
+        timings["pitch_tracking_s"] = round(time.time() - clock, 1)
         np.savez(f0_path, t=t, f0=f0, per=per, rms=rms, sep=sep)
 
     # a clean neural separation leaves little accompaniment, so the loudness gate can be looser
+    clock = time.time()
     voiced = N.voicing(per, rms, rel_db=-18.0 if sep in ("demucs", "external") else -14.0)
     m = N.hz_to_midi_f(f0)
     ms = N.smooth_vibrato(m, voiced)          # vibrato flattened first, so tuning sees note centres
@@ -133,6 +138,14 @@ def main():
     write_midi(os.path.join(a.out, "melody_quantised.mid"), qnotes, bpm, origin, a.transpose, div=div, bar=bar)
     if octv:
         write_midi(os.path.join(a.out, "melody_quantised_score_octave.mid"), qnotes, bpm, origin, -octv, div=div, bar=bar)
+    timings["notes_and_midi_s"] = round(time.time() - clock, 1)
+    timings["audio_length_s"] = round(stereo.shape[1] / sr, 1)
+    try:
+        import torch
+        timings["device"] = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+    except Exception:
+        timings["device"] = "cpu"
+    info["timings"] = timings
     with open(os.path.join(a.out, "report.json"), "w") as f:
         json.dump(info, f, indent=2, ensure_ascii=False)
     print(json.dumps(info, indent=2, ensure_ascii=False))
