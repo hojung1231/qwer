@@ -102,6 +102,20 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .transport{display:flex;gap:10px;margin-top:12px}
 .transport .go{flex:1;height:52px;border-radius:999px;background:var(--brand);color:var(--on-brand);font-weight:900;font-size:1.02rem}
 .transport .mini{height:52px;padding:0 16px;border-radius:999px;background:var(--raise);font-weight:700;color:var(--ink)}
+.pcards{display:flex;flex-direction:column;gap:10px}
+.pcard{background:var(--raise);border:1.5px solid transparent;border-radius:18px;padding:14px 15px}
+.pcard.now{border-color:var(--brand)}
+.pcard.fin{border-color:var(--ok)}
+.pcard .top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.pcard .top small{color:var(--muted);font-size:.74rem;font-weight:700;font-variant-numeric:tabular-nums}
+.pcard .top b{font-size:1.05rem;font-weight:900;font-variant-numeric:tabular-nums}
+.pcard .line{font-size:.92rem;font-weight:700;margin:5px 0 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pcard .acts{display:flex;gap:7px;flex-wrap:wrap}
+.pcard .acts button{height:36px;padding:0 13px;border-radius:999px;font-size:.82rem;font-weight:700;background:var(--bg);white-space:nowrap}
+.pcard .acts button:disabled{opacity:.4;cursor:default}
+.pcard .acts .mark[aria-pressed="true"]{background:var(--ok);color:var(--bg)}
+.pcard .acts .mix{background:var(--brand);color:var(--on-brand)}
+.pcard .hint{color:var(--muted);font-size:.76rem;margin:9px 0 0}
 .steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:var(--raise)}
 .steps button{padding:9px 0 7px;border-radius:10px;color:var(--muted);font-weight:700;font-size:.95rem;line-height:1.1}
 .steps button small{display:block;font-size:.62rem;font-weight:700;margin-top:2px;min-height:1em}
@@ -192,6 +206,8 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
         <button type="button" id="prPlay" class="go">시작</button>
         <button type="button" id="prFwd" class="mini">+10초</button>
       </div>
+      <h2 class="label">묶음별 연습</h2>
+      <div class="pcards" id="prCards"></div>
       <h2 class="label" id="gLabel">화음 멜로디 소리</h2>
       <div class="steps" id="gSteps" role="radiogroup" aria-labelledby="gLabel"></div>
       <p class="seg-desc" id="gDesc"></p>
@@ -535,7 +551,7 @@ function renderGuide(){ const box=$("gSteps"); box.textContent="";
     b.onclick=()=>{ guide=k; pref("guide",k); if(gOut) gOut.gain.value=GUIDE_GAIN[k-1]; renderGuide() }; box.append(b) }
   $("gDesc").textContent=guide===1?"화음 멜로디 소리 없이 원곡만 들립니다.":"부를 화음 음을 원곡 위에 함께 들려줍니다."; }
 function guideSchedule(){                             // queue the harmony notes that start within the next half second
-  if(!pr.on||!pr.ctx) return; const t=prTime(), ns=pr.notes;
+  if(!pr.on||!pr.ctx||tone==="voice") return; const t=prTime(), ns=pr.notes;
   while(gIdx<ns.length&&ns[gIdx].t<t+0.5){ const n=ns[gIdx++]; if(!n.h||n.t+n.d<t) continue;
     const at=pr.ctx.currentTime+Math.max(0,n.t-t), end=at+Math.max(0.05,n.t+n.d-Math.max(n.t,t)), f=440*Math.pow(2,(n.h-69)/12);
     voice(pr.ctx,gOut,f,at,end) }
@@ -543,40 +559,107 @@ function guideSchedule(){                             // queue the harmony notes
 // Three timbres chosen to stay audible over a full recording: each puts energy well above the
 // sung fundamental (where the ear is most sensitive and a vocal mix is thinner) or has a sharp attack.
 const TONES=[["lead","신스 리드","배음이 촘촘한 톱니파. 반주 위로 선명하게 뜨고 음이 끊기지 않습니다."],
-  ["bell","벨","또렷한 타격음으로 음이 바뀌는 순간이 잘 들립니다. 긴 음은 여운이 남습니다."],
-  ["chip","삐 소리","게임기 같은 사각파. 속이 빈 독특한 음색이라 목소리와 잘 구분됩니다."]];
+  ["chip","삐 소리","게임기 같은 사각파. 속이 빈 독특한 음색이라 목소리와 잘 구분됩니다."],
+  ["voice","육성","가수 음색으로 부른 화음입니다. 가사와 함께 들려 따라 부르기 쉽습니다."]];
 let tone=TONES.some(x=>x[0]===pref("tone"))?pref("tone"):"lead";
 function voice(ctx,out,f,at,end){
   const g=ctx.createGain(); g.connect(out); const osc=(type,freq,lv,dst)=>{ const o=ctx.createOscillator(), og=ctx.createGain(); o.type=type; o.frequency.value=freq; og.gain.value=lv; o.connect(og); og.connect(dst||g); o.start(at); o.stop(end+0.05); return og };
-  if(tone==="bell"){                                   // struck partials that ring down over a quiet sustained core
-    g.gain.setValueAtTime(0,at); g.gain.linearRampToValueAtTime(0.9,at+0.004); g.gain.exponentialRampToValueAtTime(0.16,at+0.5);
-    g.gain.setValueAtTime(0.16,Math.max(at+0.5,end-0.05)); g.gain.linearRampToValueAtTime(0,end+0.02);
-    osc("sine",f,1); osc("sine",f*2,0.5); osc("sine",f*3.01,0.3); osc("sine",f*5.2,0.14);
-  }else{
-    const lv=tone==="chip"?0.3:0.42;
-    g.gain.setValueAtTime(0,at); g.gain.linearRampToValueAtTime(lv,at+0.012); g.gain.setValueAtTime(lv,Math.max(at+0.012,end-0.04)); g.gain.linearRampToValueAtTime(0,end);
-    if(tone==="chip") osc("square",f,1);
-    else{ const lp=ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=Math.min(6000,f*14); lp.connect(g); osc("sawtooth",f,1,lp); osc("sawtooth",f*1.004,0.5,lp) }   // slight detune thickens it
-  }
+  const lv=tone==="chip"?0.3:0.42;
+  g.gain.setValueAtTime(0,at); g.gain.linearRampToValueAtTime(lv,at+0.012); g.gain.setValueAtTime(lv,Math.max(at+0.012,end-0.04)); g.gain.linearRampToValueAtTime(0,end);
+  if(tone==="chip") osc("square",f,1);
+  else{ const lp=ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=Math.min(6000,f*14); lp.connect(g); osc("sawtooth",f,1,lp); osc("sawtooth",f*1.004,0.5,lp) }   // slight detune thickens it
+}
+// The sung harmony: one recording per style, all kept in step with the original; only the one that
+// matches the bundle being sung is audible, and nothing sounds in 솔로 bundles.
+const vox={up:new Audio(),down:new Audio(),arranged:new Audio()}; let voxFor=null, voxOn=false, voxSync=0;
+async function voxLoad(){
+  const slug=HARM[(pr.song.title||"").trim()]; if(!slug) return false;
+  if(voxFor===slug) return true;
+  try{ for(const k in vox){ const url=`harm/${slug}_${k}.mp3`; if(!harmCache[url]){ const r=await fetch(url); if(!r.ok) throw 0; harmCache[url]=URL.createObjectURL(await r.blob()) } vox[k].src=harmCache[url]; vox[k].volume=0 }
+    voxFor=slug; return true }catch(e){ return false }
+}
+async function voxStart(){
+  if(!(await voxLoad())){ toast("이 곡은 육성 화음이 아직 없어 신스 리드로 들려드려요"); tone="lead"; renderTone(); guideStart(); return }
+  if(!pr.on||tone!=="voice") return; const t=prTime();
+  for(const k in vox){ try{ vox[k].currentTime=t }catch(e){} vox[k].volume=0; vox[k].play().catch(()=>{}) } voxOn=true;
+}
+function voxStop(){ voxOn=false; for(const k in vox) vox[k].pause() }
+function voxTick(t){                                  // called every frame while practising
+  if(!voxOn) return; let i=bundleAt(t); if(i<0) for(let k=pr.bundles.length-1;k>=0;k--){ const r=pr.bundles[k].t; if(r&&t>=r[0]){ i=k; break } }
+  const mode=i>=0&&pr.song.parts[i]===0?pr.song.modes[i]:null, lv=Math.min(1,GUIDE_GAIN[guide-1]*1.25);
+  for(const k in vox) vox[k].volume=k===mode?lv:0;
+  if(performance.now()-voxSync>400){ voxSync=performance.now(); for(const k in vox) if(Math.abs(vox[k].currentTime-t)>0.07){ try{ vox[k].currentTime=t }catch(e){} } }
 }
 function renderTone(){ const seg=$("tSeg"); seg.textContent="";
   for(const [id,name,desc] of TONES){ const b=document.createElement("button"); b.type="button"; b.textContent=name; b.setAttribute("role","radio"); b.setAttribute("aria-checked",tone===id);
-    b.onclick=()=>{ tone=id; pref("tone",id); renderTone(); tonePreview() }; seg.append(b); if(tone===id) $("tDesc").textContent=desc }
+    b.onclick=()=>{ tone=id; pref("tone",id); renderTone(); if(pr.on) guideStart(); else tonePreview() }; seg.append(b); if(tone===id) $("tDesc").textContent=desc }
 }
 function tonePreview(){                               // a short two-note sample of the chosen timbre
-  if(pr.on) return;                                   // while practising the next notes already use it
+  if(pr.on) return;
+  if(tone==="voice"){ toast("육성은 연습을 시작하면 원곡과 함께 들립니다"); return }
   try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") pr.ctx.resume();
     const out=pr.ctx.createGain(); out.gain.value=GUIDE_GAIN[Math.max(2,guide)-1]; out.connect(pr.ctx.destination); const t=pr.ctx.currentTime+0.03;
     voice(pr.ctx,out,261.6,t,t+0.32); voice(pr.ctx,out,329.6,t+0.36,t+0.8); setTimeout(()=>{ try{ out.disconnect() }catch(e){} },1400) }catch(e){}
 }
-function guideStart(){ if(!pr.ctx) return; guideStop(); gOut=pr.ctx.createGain(); gOut.gain.value=GUIDE_GAIN[guide-1]; gOut.connect(pr.ctx.destination);
+function guideStart(){ guideStop(); if(tone==="voice"){ voxStart(); return } if(!pr.ctx) return; gOut=pr.ctx.createGain(); gOut.gain.value=GUIDE_GAIN[guide-1]; gOut.connect(pr.ctx.destination);
   const t=prTime(); gIdx=pr.notes.findIndex(n=>n.t+n.d>t); if(gIdx<0) gIdx=pr.notes.length; guideSchedule(); gTimer=setInterval(guideSchedule,120) }
-function guideStop(){ clearInterval(gTimer); if(gOut){ try{ gOut.disconnect() }catch(e){} gOut=null } }
+function guideStop(){ voxStop(); clearInterval(gTimer); if(gOut){ try{ gOut.disconnect() }catch(e){} gOut=null } }
 const DATA={};
 async function songData(s){ const slug=HARM[(s.title||"").trim()]; if(!slug) return null;
   if(DATA[slug]===undefined){ try{ const r=await fetch(`data/${slug}.json`); DATA[slug]=r.ok?await r.json():null }catch(e){ DATA[slug]=null } }
   return DATA[slug] }
-const pr={song:null,notes:[],audio:new Audio(),url:null,ctx:null,an:null,buf:null,stream:null,on:false,raf:0,trace:[],recent:[],stat:null,cur:0,tA:0,tP:0,lo:48,hi:72};
+const pr={song:null,notes:[],audio:new Audio(),url:null,ctx:null,an:null,buf:null,stream:null,on:false,raf:0,trace:[],recent:[],stat:null,cur:0,tA:0,tP:0,lo:48,hi:72,
+  bundles:[],takes:{},cards:[],mixing:-1,mixSrc:null,mixEnd:0,proc:null};
+// ---- per-bundle cards: jump there, mark it finished, then hear your own take over the original
+const bundleAt=t=>{ for(let i=pr.bundles.length-1;i>=0;i--){ const r=pr.bundles[i].t; if(r&&t>=r[0]&&t<r[1]) return i } return -1 };
+function prRecord(e){                                 // keep the latest take of each harmony bundle (mono, half rate)
+  if(!pr.on||pr.mixing>=0) return;
+  const x=e.inputBuffer.getChannelData(0), sr=pr.ctx.sampleRate, t=prTime()-x.length/sr, i=bundleAt(t);
+  if(i<0||pr.song.parts[i]!==0) return;
+  let tk=pr.takes[i]; if(!tk||Math.abs(t-tk.end)>0.5) tk=pr.takes[i]={t0:t,end:t,chunks:[],sr:sr/2};      // a jump starts a new take
+  const out=new Int16Array(x.length>>1); for(let k=0;k<out.length;k++) out[k]=Math.max(-1,Math.min(1,(x[2*k]+x[2*k+1])*0.5))*32767;
+  tk.chunks.push(out); tk.end=t+x.length/sr;
+}
+function prRenderCards(){
+  const s=pr.song, box=$("prCards"); box.textContent=""; pr.cards=[];
+  if(!Array.isArray(s.completed)||s.completed.length!==pr.bundles.length) s.completed=pr.bundles.map(()=>false);
+  pr.bundles.forEach((b,i)=>{ if(s.parts[i]!==0||!b.t) return;
+    const card=document.createElement("div"); card.className="pcard";
+    const top=document.createElement("div"); top.className="top"; const sm=document.createElement("small"), acc=document.createElement("b");
+    sm.textContent=`${b.from}~${b.to}번째 줄 · ${mmss(b.t[0])} · ${STYLE_NAME[s.modes[i]]||""}`; top.append(sm,acc);
+    const line=document.createElement("div"); line.className="line"; line.textContent=b.lines[0]||"";
+    const acts=document.createElement("div"); acts.className="acts";
+    const go=document.createElement("button"); go.type="button"; go.textContent="여기부터 연습"; go.onclick=()=>{ prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); if(!pr.on) prStart() };
+    const mark=document.createElement("button"); mark.type="button"; mark.className="mark";
+    mark.onclick=()=>{ s.completed[i]=!s.completed[i]; if(!s.completed[i]&&pr.mixing===i) prMixStop(); dbPut(s); prUpdateCards() };
+    const mix=document.createElement("button"); mix.type="button"; mix.className="mix"; mix.onclick=()=>prMix(i);
+    acts.append(go,mark,mix); const hint=document.createElement("p"); hint.className="hint";
+    card.append(top,line,acts,hint); box.append(card); pr.cards.push({i,card,acc,mark,mix,hint}) });
+  if(!pr.cards.length){ const p=document.createElement("p"); p.className="seg-desc"; p.textContent="화음으로 고른 묶음이 없습니다. ‘소절 편집’에서 묶음을 화음 열로 옮겨 주세요."; box.append(p) }
+  prUpdateCards();
+}
+function prUpdateCards(){
+  const s=pr.song; if(!s) return; const tNow=prTime();
+  for(const c of pr.cards){ const b=pr.bundles[c.i], tk=pr.takes[c.i], has=!!tk&&tk.end-tk.t0>=3, done=!!s.completed[c.i];
+    let sung=0,hit=0; pr.notes.forEach((n,k)=>{ if(n.t>=b.t[0]&&n.t<b.t[1]){ sung+=pr.stat[k].sung; hit+=pr.stat[k].hit } });
+    c.acc.textContent=sung>15?Math.round(100*hit/sung)+"%":"";
+    c.card.className="pcard"+(done?" fin":"")+(pr.on&&bundleAt(tNow)===c.i?" now":"");
+    c.mark.textContent=done?"✓ 완성":"완성"; c.mark.setAttribute("aria-pressed",done); c.mark.disabled=!done&&!has;
+    c.mix.hidden=!done; c.mix.disabled=!has; c.mix.textContent=pr.mixing===c.i?"■ 멈춤":"▶ 내 목소리 + 원곡";
+    c.hint.textContent=done?(has?"":"녹음은 페이지를 닫으면 사라집니다. 이 묶음을 다시 부르면 들을 수 있어요."):(has?"다 불렀으면 ‘완성’을 눌러 주세요.":"이 묶음을 끝까지 부르면 ‘완성’을 누를 수 있어요.");
+    c.hint.hidden=!c.hint.textContent }
+}
+async function prMix(i){                              // play the take over the original, from where the take began
+  if(pr.mixing===i){ prMixStop(); return }
+  prMixStop(); prStop(); const tk=pr.takes[i]; if(!tk||!pr.ctx) return;
+  const len=tk.chunks.reduce((a,c)=>a+c.length,0), buf=pr.ctx.createBuffer(1,len,tk.sr), ch=buf.getChannelData(0); let o=0;
+  for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
+  const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=1.8; src.connect(g); g.connect(pr.ctx.destination);
+  try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); pr.audio.currentTime=tk.t0; pr.audio.volume=0.7; await pr.audio.play() }catch(e){ pr.audio.volume=1; toast("재생을 시작하지 못했습니다"); return }
+  src.start(0,Math.min(buf.duration,MIC_LAG+0.04));   // the microphone hears you a little late; skip that much
+  pr.mixing=i; pr.mixSrc=src; pr.mixEnd=tk.end; prUpdateCards();
+}
+function prMixStop(){ if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); pr.audio.volume=1; prUpdateCards() }
 const cv=$("prCanvas"), g2=cv.getContext("2d");
 function prEmpty(title,text){ $("prEmpty").hidden=false; $("prBody").hidden=true; $("prEmptyTitle").textContent=title; $("prEmptyText").textContent=text }
 async function openPractice(){
@@ -594,33 +677,38 @@ async function openPractice(){
     while(bi+1<bs.length&&bs[bi+1].t&&t>=bs[bi+1].t[0]) bi++;
     const inHarm=bs.length?s.parts[bi]===0:true, mode=bs.length?s.modes[bi]:s.style;
     return {t,d,m,h:inHarm?(data[mode]||[])[i]||0:0} });
-  if(pr.song!==s){ prStop(); if(pr.url){ try{URL.revokeObjectURL(pr.url)}catch(e){} } pr.url=URL.createObjectURL(s.blob); pr.audio.src=pr.url; pr.trace=[]; pr.tA=0 }
-  pr.song=s; pr.stat=pr.notes.map(()=>({n:0,sung:0,hit:0}));
+  if(pr.song!==s){ pr.takes={}; prMixStop(); prStop(); if(pr.url){ try{URL.revokeObjectURL(pr.url)}catch(e){} } pr.url=URL.createObjectURL(s.blob); pr.audio.src=pr.url; pr.trace=[]; pr.tA=0 }
+  pr.song=s; pr.bundles=bs; pr.stat=pr.notes.map(()=>({n:0,sung:0,hit:0}));
   const ps=pr.notes.flatMap(n=>n.h?[n.m,n.h]:[n.m]); pr.lo=Math.min(...ps)-3; pr.hi=Math.max(...ps)+3;
   $("prEmpty").hidden=true; $("prBody").hidden=false; $("prTitle").textContent=s.title;
   const nh=pr.notes.filter(n=>n.h).length;
   $("prSub").textContent=`회색은 멜로디, 금색은 내가 부를 화음 · 화음 ${nh}음`;
   const last=pr.notes[pr.notes.length-1]; $("prSeek").max=Math.ceil(last.t+last.d+2); $("prEnd").textContent=mmss(+$("prSeek").max);
   $("prNote").textContent="이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 원곡 소리를 주워 판정이 흐려집니다.";
-  renderGuide(); renderTone(); prUpdateStats(); prDraw();
+  prRenderCards(); renderGuide(); renderTone(); prUpdateStats(); prDraw();
 }
 const prTime=()=>pr.on?pr.tA+(performance.now()-pr.tP)/1000:pr.audio.currentTime||0;
-pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now() };
-pr.audio.onended=()=>prStop();
+pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.mixing>=0&&pr.audio.currentTime>=pr.mixEnd) prMixStop() };
+pr.audio.onended=()=>{ prMixStop(); prStop() };
 async function prStart(){
   if(pr.on||!pr.song) return;
+  prMixStop();
   try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") await pr.ctx.resume() }catch(e){ pr.ctx=null }
   if(!pr.an&&pr.ctx){                                // the microphone is optional: without it the lane still scrolls
     try{ pr.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-      pr.an=pr.ctx.createAnalyser(); pr.an.fftSize=2048; pr.buf=new Float32Array(2048); pr.ctx.createMediaStreamSource(pr.stream).connect(pr.an) }
+      pr.an=pr.ctx.createAnalyser(); pr.an.fftSize=2048; pr.buf=new Float32Array(2048);
+      const src=pr.ctx.createMediaStreamSource(pr.stream); src.connect(pr.an);
+      pr.proc=pr.ctx.createScriptProcessor(4096,1,1); const mute=pr.ctx.createGain(); mute.gain.value=0;      // recorded, never played back live
+      src.connect(pr.proc); pr.proc.connect(mute); mute.connect(pr.ctx.destination); pr.proc.onaudioprocess=prRecord }
     catch(e){ pr.an=null; $("prNote").className="note err"; $("prNote").textContent="마이크를 쓸 수 없어서 내 목소리는 표시되지 않습니다. 이 미리보기 화면은 마이크 사용이 막혀 있을 수 있어요. 원곡과 악보는 그대로 볼 수 있습니다." } }
   try{ await pr.audio.play() }catch(e){ toast("재생을 시작하지 못했습니다"); return }
   pr.on=true; pr.tA=pr.audio.currentTime; pr.tP=performance.now(); $("prPlay").textContent="정지";
   try{ navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{}) }catch(e){}
   guideStart(); cancelAnimationFrame(pr.raf); pr.raf=requestAnimationFrame(prTick);
 }
-function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop(); $("prPlay").textContent="시작"; $("prVerdict").textContent="대기"; $("prVerdict").className="verdict" }
-function prRelease(){ prStop(); if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
+function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop(); setTimeout(prUpdateCards,0); $("prPlay").textContent="시작"; $("prVerdict").textContent="대기"; $("prVerdict").className="verdict" }
+function prRelease(){ prMixStop(); prStop(); if(pr.proc){ try{ pr.proc.disconnect() }catch(e){} pr.proc.onaudioprocess=null; pr.proc=null }
+  if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
 function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; $("prSeek").value=t; if(pr.on) guideStart(); prDraw() }
 function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) pr.cur=0;
   while(pr.cur<ns.length&&ns[pr.cur].t+ns[pr.cur].d<t) pr.cur++;
@@ -628,7 +716,7 @@ function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) p
 let prN=0;
 function prTick(){
   if(!pr.on) return;
-  const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN;
+  const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN; voxTick(t);
   if(pr.an){ pr.an.getFloatTimeDomainData(pr.buf); const f=detectPitch(pr.buf,pr.ctx.sampleRate); m=f?69+12*Math.log2(f/440):NaN;
     pr.recent.push([t,m]); while(pr.recent.length&&pr.recent[0][0]<t-MEDIAN_S) pr.recent.shift();
     const v=pr.recent.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN }
@@ -648,7 +736,7 @@ function prTick(){
   prDraw(); pr.raf=requestAnimationFrame(prTick);
 }
 function prUpdateStats(){ let sung=0,hit=0; for(const s of pr.stat||[]){ sung+=s.sung; hit+=s.hit }
-  $("prAcc").textContent=sung>20?Math.round(100*hit/sung)+"%":"–"; $("prNow").textContent=mmss(prTime()) }
+  $("prAcc").textContent=sung>20?Math.round(100*hit/sung)+"%":"–"; $("prNow").textContent=mmss(prTime()); prUpdateCards() }
 function prDraw(){
   const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1, w=Math.round(r.width*dpr), h=Math.round(r.height*dpr);
   if(!w||!h) return; if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h }
