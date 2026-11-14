@@ -10,11 +10,16 @@ How pop/ballad harmony lines are usually written (the rules implemented here):
   * On notes that are held or land on a beat, the harmony must agree with the chord
     underneath: if the scale 3rd is not a chord tone it is moved to the nearest chord tone
     (which turns some 3rds into 4ths).  Short passing notes just keep the parallel 3rd.
-  * Arrangers do not harmonise everything: verses stay solo, a single line joins in the
-    pre-chorus, and the full stack (one voice above, one below) is kept for the chorus.
+  * A good single harmony voice is not a shadow of the lead.  It picks the side that keeps it
+    in a singable register (below a high hook, above a low line), prefers 3rds and 6ths but
+    takes a 4th or 5th when that is the chord tone, moves by step, holds a note while the lead
+    moves through passing notes (oblique motion), answers a rising lead by falling (contrary
+    motion), and avoids running in parallel 4ths/5ths.
+  * Arrangers do not harmonise everything: verses stay solo, the voice joins for the end of
+    each phrase as the song builds, and sings whole phrases only on the hook.
 
 Versions:  A = 3rd above throughout,  B = 3rd below throughout,
-           C = arranged: solo verse, 3rd above where the melody climbs, three-part on the hook.
+           C = one arranged voice: `smart_line` chooses every note by the rules above.
 
 The harmony is rendered with the singer's own isolated voice: WORLD re-synthesises it with the
 F0 moved by the harmony interval of the note being sung, so words, timing, vibrato and timbre
@@ -144,6 +149,93 @@ def sections(mel, beat):
     return lab
 
 
+def phrases(mel, beat):
+    """Index arrays of the notes of each phrase (a rest of a beat or more ends a phrase)."""
+    gaps = np.flatnonzero(mel[1:, 0] - (mel[:-1, 0] + mel[:-1, 1]) > 1.0 * beat) + 1
+    return np.split(np.arange(len(mel)), gaps)
+
+
+def smart_line(mel, chords, tonic, beat):
+    """One harmony voice chosen note by note with dynamic programming.
+
+    Every scale (or chord) tone a 3rd to a 6th away from the lead, above or below, is a
+    candidate.  A path through the candidates is scored on how each note sounds against the
+    lead and the chord, and on how the voice moves from note to note; Viterbi finds the best.
+    Returns the harmony pitch per melody note, 0 where the voice rests."""
+    p = mel[:, 2].astype(int); t = mel[:, 0]; d = mel[:, 1]
+    scale = {(tonic + x) % 12 for x in MAJOR}
+    # comfortable register for the same singer: roughly the lead's own range
+    lo_r, hi_r = np.percentile(p, 5) - 3, np.percentile(p, 92) + 1
+    IV = {3: 0.0, 4: 0.0, 8: 0.25, 9: 0.25, 5: 0.7, 7: 1.1}        # 3rds, 6ths, 4th, 5th
+    sec = sections(mel, beat)
+    out = np.zeros(len(mel), int)
+    prev_side = 0
+    for idx in phrases(mel, beat):
+        if sec[idx[0]] == 0:
+            prev_side = 0
+            continue                                                 # verse: lead alone
+        cands, costs = [], []
+        for n, i in enumerate(idx):
+            ch = chord_at(chords, t[i] + min(d[i], beat) * 0.5); tones = chord_tones(ch)
+            seventh = (ch[2] + (10 if ch[3] == "m" or (ch[2] - tonic) % 12 == 7 else 11)) % 12
+            structural = d[i] >= 0.9 * beat or n == len(idx) - 1     # held notes and phrase endings
+            w = float(np.clip(d[i] / beat, 0.3, 2.0))
+            cs, cc = [], []
+            for side in (+1, -1):
+                for k, base in IV.items():
+                    h = p[i] + side * k; pc = h % 12
+                    if pc not in scale:
+                        continue                                     # stay in the key: a wrongly guessed
+                                                                     # borrowed chord must not pull the voice out
+                    c = base
+                    if pc not in tones:
+                        c += (0.5 if pc == seventh else 1.6) if structural else 0.3
+                    elif k in (5, 7):
+                        c -= 0.3                                     # a 4th/5th is fine when it is the chord tone
+                    if n == len(idx) - 1 and k not in (3, 4, 8, 9):
+                        c += 0.6                                     # end a phrase on a sweet interval
+                    c += 0.12 * max(0.0, h - hi_r) + 0.10 * max(0.0, lo_r - h)
+                    cs.append((h, side, k)); cc.append(c * w)
+            cands.append(cs); costs.append(np.array(cc))
+        # Viterbi over the phrase
+        dp = costs[0] + np.array([0.3 if (prev_side and sd != prev_side) else 0.0 for _, sd, _ in cands[0]])
+        back = []
+        for n in range(1, len(idx)):
+            lead_move = p[idx[n]] - p[idx[n - 1]]
+            tr = np.zeros((len(cands[n - 1]), len(cands[n])))
+            for a_, (h0, s0, k0) in enumerate(cands[n - 1]):
+                for b_, (h1, s1, k1) in enumerate(cands[n]):
+                    m = h1 - h0; am = abs(m)
+                    c = 0.0 if am <= 2 else (0.35 if am <= 4 else (0.9 if am <= 7 else 2.2))
+                    if s0 != s1:
+                        c += 2.5                                     # do not hop over the lead mid-phrase
+                    if lead_move != 0 and m == 0:
+                        c -= 0.30                                    # oblique: hold while the lead moves
+                    elif lead_move * m < 0:
+                        c -= 0.20                                    # contrary motion
+                    if lead_move == 0 and m != 0:
+                        c += 0.4                                     # lead repeats a note: stay with it
+                    if k0 in (5, 7) and k1 == k0 and lead_move != 0:
+                        c += 1.5                                     # parallel 4ths / 5ths
+                    tr[a_, b_] = c
+            tot = dp[:, None] + tr
+            back.append(tot.argmin(0)); dp = tot.min(0) + costs[n]
+        j = int(dp.argmin()); path = [j]
+        for bk in reversed(back):
+            j = int(bk[j]); path.append(j)
+        path = path[::-1]
+        line = np.array([cands[n][j][0] for n, j in enumerate(path)])
+        prev_side = cands[-1][path[-1]][1]
+        if sec[idx[0]] == 1:
+            # building sections: the voice only joins for the back half of the phrase
+            mid = 0.5 * (t[idx[0]] + t[idx[-1]] + d[idx[-1]])
+            line = np.where(t[idx] >= mid - 1e-6, line, 0)
+            if not line.any():
+                line[-1] = cands[-1][path[-1]][0]
+        out[idx] = line
+    return out
+
+
 # ------------------------------------------------------------------ rendering with the singer's voice
 class Voice:
     """WORLD analysis of the vocal, done once; `shifted` re-synthesises it with F0 moved per note."""
@@ -211,7 +303,7 @@ def main():
     versions = {
         "A": [("3rd above", up)],
         "B": [("3rd below", dn)],
-        "C": [("above (pre-chorus + hook)", np.where(sec >= 1, up, 0)), ("below (hook only)", np.where(sec >= 2, dn, 0))],
+        "C": [("arranged single voice", smart_line(mel, chords, tonic, beat))],
     }
     g = 10 ** (a.harmony_db / 20)
     voice = Voice(vocal, sr)
