@@ -42,15 +42,14 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .meta span{display:block;color:var(--muted);font-size:.86rem;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dur{flex:none;color:var(--muted);font-size:.84rem;font-variant-numeric:tabular-nums}
 .chip{flex:none;font-size:.68rem;font-weight:700;color:var(--muted);background:var(--raise);border:1px solid var(--hair);border-radius:999px;padding:2px 8px}
-.ext{flex:none;height:36px;padding:0 16px;border-radius:999px;border:1.5px solid var(--brand);color:var(--brand);font-weight:700;font-size:.86rem}
+.ext{flex:none;height:36px;padding:0 14px;white-space:nowrap;border-radius:999px;border:1.5px solid var(--brand);color:var(--brand);font-weight:700;font-size:.86rem}
 .ext:active{background:var(--press)}
 .done{flex:none;display:flex;align-items:center;gap:5px;height:32px;padding:0 12px 0 9px;border-radius:999px;background:var(--ok-bg);color:var(--ok);font-weight:700;font-size:.8rem;white-space:nowrap}
 .done svg{width:15px;height:15px}
-.spin{flex:none;width:26px;height:26px;border-radius:50%;border:3px solid var(--hair);border-top-color:var(--brand)}
-.stage{display:flex;align-items:center;gap:8px;margin-top:6px}
-.stage i{flex:1;height:4px;border-radius:2px;background:var(--hair);overflow:hidden}
-.stage i::after{content:"";display:block;height:100%;width:var(--p,0%);background:var(--brand);border-radius:2px}
-.stage em{flex:none;font-style:normal;font-size:.76rem;color:var(--brand);font-weight:700;min-width:5.2em;text-align:right}
+.pct{flex:none;min-width:3.2em;text-align:right;color:var(--brand);font-weight:900;font-size:1.15rem;font-variant-numeric:tabular-nums}
+.stage{margin-top:7px}
+.stage i{display:block;height:5px;border-radius:3px;background:var(--hair);overflow:hidden}
+.stage i::after{content:"";display:block;height:100%;width:var(--p,0%);background:var(--brand);border-radius:3px}
 .meta .detail{color:var(--ok);font-size:.78rem;font-variant-numeric:tabular-nums}
 .del{flex:none;width:30px;height:30px;border-radius:50%;background:var(--danger);display:grid;place-items:center}
 .del::before{content:"";width:12px;height:2.5px;border-radius:2px;background:#fff}
@@ -80,8 +79,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .tab[aria-selected="true"]{color:var(--ink);background:var(--press)}
 .tab[aria-selected="true"] svg{color:var(--brand)}
 .tab:disabled{opacity:.4;cursor:default}
-@media (prefers-reduced-motion:no-preference){.song{transition:background .15s}.fab{transition:transform .12s}.stage i::after{transition:width .9s ease}.spin{animation:spin .8s linear infinite}}
-@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:no-preference){.song{transition:background .15s}.fab{transition:transform .12s}}
 </style>
 
 <main class="gutter" id="main">
@@ -141,17 +139,22 @@ const EXAMPLE={id:"ex-sungnyeoege",title:"숙녀에게",artist:"변진섭",album
 const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("hw_"+k); localStorage.setItem("hw_"+k,v) }catch(e){} return null };
 EXAMPLE.state=pref("ex")==="done"?"done":undefined;
 let exampleHidden=pref("ex")==="hidden";
-const STAGES=["보컬 분리","음높이 추적","음표 만들기"];
-// No server is connected to this prototype yet, so extraction only plays through its three stages.
+// No server is connected to this prototype yet, so extraction only counts up to 100%.
+// The estimate follows the song's length; the real job takes about a minute for a four-minute song.
 function extract(s,li){
   if(s.state) return; s.state="busy";
+  const total=Math.max(8,Math.min(20,(s.dur||200)*0.05))*1000, t0=performance.now();
   const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
-  const spin=document.createElement("span"); spin.className="spin"; spin.setAttribute("role","status"); spin.setAttribute("aria-label","추출 중"); btn.replaceWith(spin);
-  const st=document.createElement("div"); st.className="stage"; const bar=document.createElement("i"), lab=document.createElement("em"); st.append(bar,lab); meta.append(st);
-  let k=0; const step=()=>{
-    if(k<STAGES.length){ lab.textContent=STAGES[k]; requestAnimationFrame(()=>bar.style.setProperty("--p",Math.round(100*(k+1)/STAGES.length)+"%")); k++; setTimeout(step,1100) }
-    else { s.state="done"; if(s.example) pref("ex","done"); else dbPut(s); render() } };
-  step();
+  const pct=document.createElement("span"); pct.className="pct"; pct.setAttribute("role","status"); btn.replaceWith(pct);
+  const st=document.createElement("div"); st.className="stage"; const bar=document.createElement("i"); st.append(bar);
+  meta.append(st);
+  const tick=()=>{
+    const p=Math.min(1,(performance.now()-t0)/total);
+    if(p>=1){ s.state="done"; if(s.example) pref("ex","done"); else dbPut(s); render(); return }
+    bar.style.setProperty("--p",(p*100).toFixed(1)+"%"); pct.textContent=Math.floor(p*100)+"%";
+    requestAnimationFrame(tick);
+  };
+  tick();
 }
 
 // ---------------------------------------------------------------- storage (this device only)
@@ -240,8 +243,8 @@ function render(){
         if(!songs.length&&exampleHidden) setEditing(false); render() }; li.append(x) }
     else if(s.state==="done"){ const d=document.createElement("span"); d.className="done";
       d.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
-      d.append("추출됨"); d.setAttribute("aria-label","멜로디 추출됨"); li.append(d) }
-    else { const x=document.createElement("button"); x.className="ext"; x.type="button"; x.textContent="추출"; x.setAttribute("aria-label",s.title+" 멜로디 추출");
+      d.append("추출 완료"); d.setAttribute("aria-label","화음 추출 완료"); li.append(d) }
+    else { const x=document.createElement("button"); x.className="ext"; x.type="button"; x.textContent="화음 추출"; x.setAttribute("aria-label",s.title+" 화음 추출");
       x.onclick=()=>extract(s,li); li.append(x) }
     ul.append(li);
   }
