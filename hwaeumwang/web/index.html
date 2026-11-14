@@ -85,6 +85,9 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .play{float:right;margin:-3px -4px 4px 8px;width:32px;height:32px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
 .play::before{content:"";border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent var(--bg);margin-left:3px}
 .play.on{background:var(--brand)}
+.modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;margin-top:10px;padding:3px;border-radius:10px;background:var(--bg);clear:both}
+.modes button{padding:6px 0;border-radius:8px;font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap}
+.modes button[aria-checked="true"]{background:var(--brand);color:var(--on-brand)}
 .play.on::before{border:0;width:10px;height:10px;border-radius:2px;background:var(--on-brand);margin:0}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(164px + env(safe-area-inset-bottom,0px));z-index:7;background:var(--ink);color:var(--bg);
   font-weight:700;font-size:.86rem;padding:10px 16px;border-radius:999px;white-space:nowrap;max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis}
@@ -189,10 +192,11 @@ const EXAMPLE={id:"ex-sungnyeoege",title:"숙녀에게",artist:"변진섭",album
   result:{notes:258,key:"D장조",bpm:72,sig:"12/8"},
   // only the opening words of each bundle: the example has no file to read the lyrics from
   bundles:[["어쩌면…"],["그대의…"],["허면…"],["나 그…"],["나 그…"]].map((l,i)=>({from:i*4+1,to:i*4+4,lines:l.concat("(예시 곡은 첫머리만 표시합니다)")}))};
-try{ const p=JSON.parse(pref("ex_parts")||"null"); if(Array.isArray(p)) EXAMPLE.parts=p }catch(e){}
-EXAMPLE.style=pref("ex_style")||"up";
 const pref=(k,v)=>{ try{ if(v===undefined) return localStorage.getItem("hw_"+k); localStorage.setItem("hw_"+k,v) }catch(e){} return null };
 EXAMPLE.state=pref("ex")==="done"?"done":undefined;
+try{ const p=JSON.parse(pref("ex_parts")||"null"); if(Array.isArray(p)) EXAMPLE.parts=p }catch(e){}
+EXAMPLE.style=pref("ex_style")||"up";
+try{ const p=JSON.parse(pref("ex_modes")||"null"); if(Array.isArray(p)) EXAMPLE.modes=p }catch(e){}
 let exampleHidden=pref("ex")==="hidden";
 // No server is connected to this prototype yet, so extraction only counts up to 100%.
 // The estimate follows the song's length; the real job takes about a minute for a four-minute song.
@@ -326,24 +330,47 @@ const STYLES=[["up","3도 위","멜로디보다 3도 높게 따라갑니다. 밝
 function renderStyle(){
   const s=current, seg=$("seg"); seg.textContent=""; if(!STYLES.some(x=>x[0]===s.style)) s.style="up";
   for(const [id,name,desc] of STYLES){ const b=document.createElement("button"); b.type="button"; b.textContent=name; b.setAttribute("role","radio"); b.setAttribute("aria-checked",s.style===id);
-    b.onclick=()=>{ s.style=id; if(s.example) pref("ex_style",id); else dbPut(s); renderStyle() }; seg.append(b); if(s.style===id) $("segDesc").textContent=desc }
+    // choosing here sets every bundle; single bundles can then be changed on their own cards
+    b.onclick=()=>{ s.style=id; s.modes=(s.parts||[]).map(()=>id); saveParts(s); stopPlay(); renderStyle(); if(lastBundles) renderEditor(lastBundles) };
+    seg.append(b); if(s.style===id) $("segDesc").textContent=desc+" 고르면 모든 묶음에 적용되고, 묶음마다 따로 바꿀 수도 있어요." }
 }
+let lastBundles=null;
+// Harmony voices made for the three analysed songs (one file per style), played over the original.
+const HARM={"사랑했지만":"saranghaetjiman","숙녀에게":"sungnyeoege","청혼":"cheonghon"};
+const STYLE_NAME=Object.fromEntries(STYLES.map(x=>[x[0],x[1]])), STYLE_SHORT={up:"3도 위",down:"3도 아래",arranged:"편곡"};
 // Where each bundle is sung, in seconds.  Finding this needs the real extraction, which has no
 // server yet; for the three songs already analysed the measured ranges are built in, matched by title.
 const TIMES={"사랑했지만":[[16.2,39.4],[40.9,64.4],[65.5,87.1],[86.3,110.9],[110.9,129.0],[129.4,178.6],[178.6,203.3],[202.5,219.4],[218.6,246.8]],"숙녀에게":[[30.6,59.7],[58.9,84.6],[83.8,144.7],[143.9,171.3],[170.5,202.4]],"청혼":[[23.9,48.4],[47.6,71.4],[71.6,93.6],[93.6,123.6],[122.8,139.8],[139.0,165.4],[164.6,184.0],[183.2,188.2]]};
-const player=new Audio(); let playing=-1, playUrl=null, stopAt=0;
-player.ontimeupdate=()=>{ if(playing>=0&&player.currentTime>=stopAt) stopPlay() };
+const player=new Audio(), harm=new Audio(); let playing=-1, playUrl=null, harmUrl=null, withHarm=false, stopAt=0;
+harm.preload="auto"; harm.volume=0.9;
+player.ontimeupdate=()=>{ if(playing<0) return;
+  if(player.currentTime>=stopAt){ stopPlay(); return }
+  if(withHarm&&Math.abs(harm.currentTime-player.currentTime)>0.07){ try{ harm.currentTime=player.currentTime }catch(e){} } };   // keep the two in step
 player.onended=()=>stopPlay();
-function stopPlay(){ if(playing<0) return; player.pause(); playing=-1; for(const b of document.querySelectorAll(".play")) b.classList.remove("on") }
-function playBundle(s,b,i,btn){
+harm.onerror=()=>{ if(withHarm){ withHarm=false; toast("화음 음원을 불러오지 못해 원곡만 들려드려요") } };
+function stopPlay(){ if(playing<0) return; player.pause(); harm.pause(); playing=-1; for(const b of document.querySelectorAll(".play")) b.classList.remove("on") }
+const harmCache={};
+const ready=a=>a.readyState>=1?Promise.resolve():new Promise(res=>{ a.addEventListener("loadedmetadata",res,{once:true}); a.addEventListener("error",res,{once:true}) });
+async function playBundle(s,b,i,btn){
   if(playing===i){ stopPlay(); return }
   if(!s.blob){ toast("예시 곡은 파일이 없어 들을 수 없어요. 같은 곡 mp3를 추가해 보세요"); return }
   if(!b.t){ toast("이 곡은 아직 소절 위치를 모릅니다 (실제 추출 연결 후 가능)"); return }
   stopPlay();
   if(!playUrl){ try{ playUrl=URL.createObjectURL(s.blob); player.src=playUrl }catch(e){ toast("이 파일을 재생할 수 없습니다"); return } }
+  const mode=s.parts[i]===0?s.modes[i]:null, slug=HARM[(s.title||"").trim()];     // 솔로 bundles play the original alone
+  withHarm=!!(mode&&slug);
+  if(mode&&!slug) toast("이 곡은 화음 음원이 아직 없어 원곡만 들려드려요");
   stopAt=b.t[1]; playing=i; btn.classList.add("on");
-  const go=()=>{ try{ player.currentTime=b.t[0] }catch(e){} player.play().catch(()=>{ stopPlay(); toast("재생을 시작하지 못했습니다") }) };
-  if(player.readyState>=1) go(); else player.addEventListener("loadedmetadata",go,{once:true});
+  if(withHarm){ const url=`harm/${slug}_${mode}.mp3`;
+    if(harmUrl!==url){                                              // fetched whole, so seeking never depends on the host
+      try{ if(!harmCache[url]){ const r=await fetch(url); if(!r.ok) throw 0; harmCache[url]=URL.createObjectURL(await r.blob()) }
+        if(playing!==i) return; harmUrl=url; harm.src=harmCache[url] }
+      catch(e){ withHarm=false; toast("화음 음원을 불러오지 못해 원곡만 들려드려요") } } }
+  await Promise.all([ready(player),withHarm?ready(harm):null]);
+  if(playing!==i) return;                                                            // stopped or switched while loading
+  try{ player.currentTime=b.t[0]; if(withHarm) harm.currentTime=b.t[0] }catch(e){}
+  player.play().catch(()=>{ stopPlay(); toast("재생을 시작하지 못했습니다") });
+  if(withHarm) harm.play().catch(()=>{ withHarm=false });
 }
 const mmss=t=>Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0");
 let current=null;
@@ -356,11 +383,14 @@ async function bundlesOf(s){
   for(let i=0;i<lines.length;i+=PER_BUNDLE) out.push({from:i+1,to:Math.min(lines.length,i+PER_BUNDLE),lines:lines.slice(i,i+PER_BUNDLE),t:times[i/PER_BUNDLE]||null});
   return out;
 }
-function saveParts(s){ if(s.example) pref("ex_parts",JSON.stringify(s.parts)); else dbPut(s) }
+function saveParts(s){ if(s.example){ pref("ex_parts",JSON.stringify(s.parts)); pref("ex_modes",JSON.stringify(s.modes)); pref("ex_style",s.style) } else dbPut(s) }
 async function openEditor(s){
   if(current!==s) closePlayer();
   current=s; pref("last",s.id); const bs=await bundlesOf(s);
   if(!Array.isArray(s.parts)||s.parts.length!==bs.length) s.parts=bs.map(()=>0);          // everything starts under 화음
+  if(!STYLES.some(x=>x[0]===s.style)) s.style="up";
+  if(!Array.isArray(s.modes)||s.modes.length!==bs.length) s.modes=bs.map(()=>s.style);    // each bundle starts on the song-wide style
+  lastBundles=bs;
   $("edTitle").textContent=s.title;
   $("edNote").textContent=bs.length?"":"이 mp3 안에 가사가 없어서 묶음을 만들 수 없습니다.";
   show("edit"); renderStyle(); renderEditor(bs);
@@ -375,17 +405,23 @@ function renderEditor(bs){
       // the bundle is the tap target for moving; the play button inside it must not move it
       const btn=document.createElement("div"); btn.className="bundle c"+c; btn.setAttribute("role","button"); btn.tabIndex=0;
       const next=COLS[(c+1)%COLS.length]; btn.setAttribute("aria-label",`${b.from}~${b.to}번째 줄, 지금 ${name}. 누르면 ${next}(으)로 옮깁니다`);
-      const pl=document.createElement("button"); pl.type="button"; pl.className="play"+(playing===i?" on":""); pl.setAttribute("aria-label",`${b.from}~${b.to}번째 줄 원곡 듣기`);
+      const pl=document.createElement("button"); pl.type="button"; pl.className="play"+(playing===i?" on":"");
+      pl.setAttribute("aria-label",`${b.from}~${b.to}번째 줄 `+(c===0?`원곡과 ${STYLE_NAME[s.modes[i]]} 화음 함께 듣기`:"원곡 듣기"));
       pl.onclick=e=>{ e.stopPropagation(); playBundle(s,b,i,pl) }; btn.append(pl);
       const sm=document.createElement("small"); sm.textContent=(b.from===b.to?`${b.from}번째 줄`:`${b.from}~${b.to}번째 줄`)+(b.t?` · ${mmss(b.t[0])}`:""); btn.append(sm);
       for(const l of b.lines){ const sp=document.createElement("span"); sp.textContent=l; btn.append(sp) }
-      const move=()=>{ s.parts[i]=(c+1)%COLS.length; saveParts(s); renderEditor(bs) };
+      if(c===0){                                                    // harmony style of this bundle alone
+        const ms=document.createElement("div"); ms.className="modes"; ms.setAttribute("role","radiogroup"); ms.setAttribute("aria-label","이 묶음의 화음");
+        for(const [id] of STYLES){ const mb=document.createElement("button"); mb.type="button"; mb.textContent=STYLE_SHORT[id]; mb.setAttribute("role","radio"); mb.setAttribute("aria-checked",s.modes[i]===id);
+          mb.onclick=e=>{ e.stopPropagation(); if(s.modes[i]===id) return; s.modes[i]=id; saveParts(s); if(playing===i) stopPlay(); renderEditor(bs) }; ms.append(mb) }
+        btn.append(ms) }
+      const move=()=>{ if(playing===i) stopPlay(); s.parts[i]=(c+1)%COLS.length; saveParts(s); renderEditor(bs) };
       btn.onclick=move; btn.onkeydown=e=>{ if((e.key==="Enter"||e.key===" ")&&e.target===btn){ e.preventDefault(); move() } };
       row.append(btn) });
     rows.append(row) });
   $("edSub").textContent=bs.length?`묶음을 누르면 ${COLS.join(" ↔ ")}로 옮겨집니다.`:"";
 }
-function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } }
+function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } harmUrl=null; harm.removeAttribute("src") }
 function show(name){
   if(name!=="edit") stopPlay();
   $("screen-library").hidden=name!=="library"; $("screen-edit").hidden=name!=="edit"; $("screen-soon").hidden=name!=="soon";
