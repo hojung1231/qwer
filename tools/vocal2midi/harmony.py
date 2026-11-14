@@ -239,12 +239,27 @@ def smart_line(mel, chords, tonic, beat):
 # ------------------------------------------------------------------ rendering with the singer's voice
 class Voice:
     """WORLD analysis of the vocal, done once; `shifted` re-synthesises it with F0 moved per note."""
-    def __init__(self, vocal, sr):
+    def __init__(self, vocal, sr, f0_track=None):
+        """f0_track = (times, f0_hz, voiced) from the melody extraction.  WORLD's own quick F0
+        (DIO) flickers between voiced and unvoiced inside sung vowels and jumps octaves on this
+        material; every such frame is re-synthesised as noise or with a wrong spectral envelope,
+        which is heard as a scratchy rustle.  The CREPE track is far steadier."""
         import pyworld as pw
         self.pw, self.sr, self.x = pw, sr, vocal.astype(np.float64)
         f0, self.tt = pw.dio(self.x, sr, f0_floor=70.0, f0_ceil=1000.0, frame_period=5.0)
+        if f0_track is not None:
+            t, f, v = f0_track
+            voiced = np.interp(self.tt, t, v.astype(float)) > 0.5
+            # close gaps shorter than 40 ms so a vowel is not chopped by a single doubtful frame
+            idx = np.flatnonzero(voiced)
+            for a_, b_ in zip(idx[:-1], idx[1:]):
+                if 1 < b_ - a_ <= 8:
+                    voiced[a_:b_] = True
+            f0 = np.where(voiced, np.interp(self.tt, t, f), 0.0)
         self.f0 = pw.stonemask(self.x, f0, self.tt, sr)
         self.sp = pw.cheaptrick(self.x, self.f0, self.tt, sr); self.ap = pw.d4c(self.x, self.f0, self.tt, sr)
+        # consonants and breaths of a backing voice sit well under the lead's
+        self.unvoiced_gain = np.where(self.f0 > 0, 1.0, 0.45)
 
     def shifted(self, mel, interval_semitones):
         tt = self.tt
@@ -260,7 +275,7 @@ class Voice:
             if shift[i] == 0:
                 shift[i] = shift[i - 1]
         y = self.pw.synthesize(self.f0 * 2.0 ** (shift / 12.0), self.sp, self.ap, self.sr, 5.0)[:len(self.x)]
-        return (y * np.interp(np.arange(len(y)) / self.sr, tt, gain)).astype(np.float32)
+        return (y * np.interp(np.arange(len(y)) / self.sr, tt, gain * self.unvoiced_gain)).astype(np.float32)
 
     def from_score(self, mel, pitches, tuning_cents=0.0, glide_s=0.06, vib_cents=18.0, vib_hz=5.5):
         """Sing the written harmony notes with the singer's timbre and words.
@@ -289,7 +304,7 @@ class Voice:
         ker = np.hanning(13); ker /= ker.sum(); gain = np.convolve(gain, ker, mode="same")
         f0 = np.where(self.f0 > 0, 440.0 * 2.0 ** ((target - 69.0) / 12.0), 0.0)
         y = self.pw.synthesize(f0, self.sp, self.ap, self.sr, 5.0)[:len(self.x)]
-        return (y * np.interp(np.arange(len(y)) / self.sr, tt, gain)).astype(np.float32)
+        return (y * np.interp(np.arange(len(y)) / self.sr, tt, gain * self.unvoiced_gain)).astype(np.float32)
 
 
 def write_midi(path, mel, lines, bpm, origin, div):
@@ -338,7 +353,8 @@ def main():
         "C": [("arranged single voice", smart_line(mel, chords, tonic, beat))],
     }
     g = 10 ** (a.harmony_db / 20)
-    voice = Voice(vocal, sr)
+    z = np.load(os.path.join(a.out_dir, "f0.npz"))
+    voice = Voice(vocal, sr, (z["t"], z["f0"], N.voicing(z["per"], z["rms"], rel_db=-18.0)))
     for v in a.only:
         lines = versions[v]
         if a.pitch_source == "score":
