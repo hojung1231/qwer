@@ -226,7 +226,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <p class="note" id="prNote"></p>
     </div>
   </section>
-  <p class="ver" id="ver">화음왕 · 11월 16일판 c</p>
+  <p class="ver" id="ver">화음왕 · 11월 16일판 d</p>
   <section id="screen-soon" class="soon" hidden><p>이 탭은 아직 만들지 않았습니다.</p></section>
 </main>
 
@@ -624,17 +624,28 @@ async function voxLoad(){
   try{ for(const k in vox){ const url=await harmSrc(pr.song,k); if(!url) return false; vox[k].src=url; vox[k].volume=0 }
     voxFor=key; return true }catch(e){ return false }
 }
+let voxUsed=[];
 async function voxStart(){
   if(!(await voxLoad())){ toast("이 곡은 육성 화음이 아직 없어 신스 리드로 들려드려요"); tone="lead"; renderTone(); guideStart(); return }
-  if(!pr.on||tone!=="voice") return; const t=prTime();
-  for(const k in vox){ try{ vox[k].currentTime=t }catch(e){} vox[k].volume=0; vox[k].play().catch(()=>{}) } voxOn=true;
+  if(!pr.on||tone!=="voice") return; const t=prTime(), s=pr.song;
+  // only the styles this song actually uses are played; the others stay paused
+  voxUsed=[...new Set(s.modes.filter((m,i)=>s.parts[i]===0))].filter(k=>vox[k]);
+  for(const k in vox){ vox[k].volume=0; vox[k].playbackRate=1;
+    if(voxUsed.includes(k)){ try{ vox[k].currentTime=t }catch(e){} vox[k].play().catch(()=>{}) } else vox[k].pause() }
+  voxOn=true; voxSync=performance.now()+600;          // let them settle before the first correction
 }
-function voxStop(){ voxOn=false; for(const k in vox) vox[k].pause() }
+function voxStop(){ voxOn=false; for(const k in vox){ vox[k].pause(); vox[k].playbackRate=1 } }
 function voxTick(t){                                  // called every frame while practising
   if(!voxOn) return; let i=bundleAt(t); if(i<0) for(let k=pr.bundles.length-1;k>=0;k--){ const r=pr.bundles[k].t; if(r&&t>=r[0]){ i=k; break } }
   const mode=i>=0&&pr.song.parts[i]===0?pr.song.modes[i]:null, lv=Math.min(1,GUIDE_GAIN[guide-1]*1.25);
-  for(const k in vox) vox[k].volume=k===mode?lv:0;
-  if(performance.now()-voxSync>400){ voxSync=performance.now(); for(const k in vox) if(Math.abs(vox[k].currentTime-t)>0.07){ try{ vox[k].currentTime=t }catch(e){} } }
+  for(const k of voxUsed) vox[k].volume=k===mode?lv:0;
+  // Keeping two players in step by jumping one of them is heard as a stutter, and on a phone the
+  // reported position is coarse enough to trigger a jump every time.  So: drift is taken up by
+  // playing a hair faster or slower, and a jump is kept for when they are really apart.
+  if(performance.now()<voxSync) return; voxSync=performance.now()+300;
+  for(const k of voxUsed){ const v=vox[k]; if(v.paused||v.seeking||v.readyState<2) continue; const d=v.currentTime-t;
+    if(Math.abs(d)>0.4){ try{ v.currentTime=t+0.03 }catch(e){} v.playbackRate=1; voxSync=performance.now()+900 }
+    else v.playbackRate=Math.abs(d)<0.04?1:Math.max(0.97,Math.min(1.03,1-d*0.25)) }
 }
 function renderTone(){ const seg=$("tSeg"); seg.textContent="";
   for(const [id,name,desc] of TONES){ const b=document.createElement("button"); b.type="button"; b.textContent=name; b.setAttribute("role","radio"); b.setAttribute("aria-checked",tone===id);
