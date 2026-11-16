@@ -132,7 +132,10 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .fab:active{transform:scale(.97)}
 .fab{cursor:pointer;user-select:none;-webkit-user-select:none}
 .fab:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
-.sr-file{position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none}
+.sr-file{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}
+.fab:focus-within{outline:2px solid var(--ink);outline-offset:3px}
+.crash{position:fixed;left:12px;right:12px;top:calc(8px + env(safe-area-inset-top,0px));z-index:20;background:var(--danger);color:#fff;font-size:.8rem;font-weight:700;padding:10px 12px;border-radius:12px;overflow-wrap:anywhere}
+.ver{color:var(--muted);font-size:.68rem;text-align:center;margin:26px 0 0;opacity:.7}
 
 .tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:6;
   width:min(360px,calc(100% - 2*max(20px,env(safe-area-inset-left,0px))));display:flex;padding:6px;border-radius:999px;
@@ -217,16 +220,19 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <p class="note" id="prNote"></p>
     </div>
   </section>
+  <p class="ver" id="ver">화음왕 시안 · 11월 16일판</p>
   <section id="screen-soon" class="soon" hidden><p>이 탭은 아직 만들지 않았습니다.</p></section>
 </main>
 
 <!-- The button is a label for the file input itself: tapping it opens the phone's file picker directly,
      which works in browsers and in-app views that ignore a scripted click on a hidden input. -->
-<label class="fab" id="addBtn" for="picker" role="button" tabindex="0">
+<label class="fab" id="addBtn">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
   곡 추가
+  <!-- The real file input lies invisibly over the whole button, so the tap lands on the input itself.
+       Nothing is scripted or forwarded, which is the form every browser and in-app view accepts. -->
+  <input id="picker" class="sr-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple aria-label="곡 추가: mp3 파일 고르기">
 </label>
-<input id="picker" class="sr-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple tabindex="-1" aria-hidden="true">
 
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -247,6 +253,10 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 
 <script>
 "use strict";
+// Anything that breaks is shown on the page, so a problem on a phone can be read out instead of guessed at.
+function crash(m){ let b=document.getElementById("crash"); if(!b){ b=document.createElement("div"); b.id="crash"; b.className="crash"; b.setAttribute("role","alert"); document.body.append(b) } b.textContent="오류: "+m }
+addEventListener("error",e=>crash((e.message||"알 수 없는 오류")+(e.lineno?" (줄 "+e.lineno+")":"")));
+addEventListener("unhandledrejection",e=>crash(String(e.reason&&e.reason.message||e.reason||"알 수 없는 오류")));
 const $=id=>document.getElementById(id);
 let songs=[], editing=false;
 // One example card, so the extract button can be tried before any file is added.
@@ -759,8 +769,9 @@ addEventListener("resize",()=>{ if(!$("screen-practice").hidden) prDraw() });
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) prStop() });
 
 // ---------------------------------------------------------------- wiring
-$("addBtn").onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); $("picker").click() } };
-$("picker").onchange=async e=>{ const fs=[...e.target.files]; e.target.value=""; if(fs.length){ $("note").textContent=""; await addFiles(fs) } };
+$("picker").onclick=()=>{ $("note").className="note"; $("note").textContent="" };
+$("picker").onchange=async e=>{ const fs=[...e.target.files]; e.target.value="";
+  if(fs.length){ $("note").textContent=""; await addFiles(fs) } else { $("note").className="note"; $("note").textContent="고른 파일이 없습니다." } };
 $("editBtn").onclick=()=>{ setEditing(!editing); render() };
 for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
   if(t.disabled) return;
