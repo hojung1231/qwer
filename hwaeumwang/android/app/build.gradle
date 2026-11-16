@@ -1,0 +1,41 @@
+plugins { id "com.android.application" }
+
+android {
+    namespace "com.hojung1231.hwaeumwang"
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.hojung1231.hwaeumwang"
+        minSdk 26
+        targetSdk 34
+        versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger())
+        versionName "0.1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+    }
+    signingConfigs {
+        // A throwaway key kept in the repository on purpose: every build is signed the same way,
+        // so a newer preview installs over an older one.  Not for a store release.
+        preview { storeFile file("../preview.keystore"); storePassword "hwaeumwang"; keyAlias "preview"; keyPassword "hwaeumwang" }
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.preview }
+        release { signingConfig signingConfigs.preview; minifyEnabled false }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+dependencies { implementation "androidx.webkit:webkit:1.11.0" }
+
+// The screens are the web page in ../../web/index.html.  It is written as a page fragment
+// (no <html>/<body>), so it is wrapped into a full document and bundled as an asset here.
+def webSrc = file("../../web/index.html")
+def webOut = file("src/main/assets/www/index.html")
+tasks.register("bundleWeb") {
+    inputs.file(webSrc); outputs.file(webOut)
+    doLast {
+        webOut.parentFile.mkdirs()
+        webOut.setText('<!doctype html><html lang="ko"><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+            '<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>' +
+            webSrc.getText("UTF-8") + '</body></html>', "UTF-8")
+    }
+}
+preBuild.dependsOn "bundleWeb"

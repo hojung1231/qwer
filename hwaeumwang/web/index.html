@@ -220,7 +220,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <p class="note" id="prNote"></p>
     </div>
   </section>
-  <p class="ver" id="ver">화음왕 시안 · 11월 16일판</p>
+  <p class="ver" id="ver">화음왕 · 11월 16일판 b</p>
   <section id="screen-soon" class="soon" hidden><p>이 탭은 아직 만들지 않았습니다.</p></section>
 </main>
 
@@ -231,7 +231,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
   곡 추가
   <!-- The real file input lies invisibly over the whole button, so the tap lands on the input itself.
        Nothing is scripted or forwarded, which is the form every browser and in-app view accepts. -->
-  <input id="picker" class="sr-file" type="file" accept=".mp3,audio/mpeg,audio/mp3" multiple aria-label="곡 추가: mp3 파일 고르기">
+  <input id="picker" class="sr-file" type="file" accept=".mp3,.json,audio/mpeg,audio/mp3,application/json" multiple aria-label="곡 추가: mp3 파일이나 화음 데이터 파일 고르기">
 </label>
 
 <div class="toast" id="toast" role="status" hidden></div>
@@ -275,7 +275,9 @@ let exampleHidden=pref("ex")==="hidden";
 // No server is connected to this prototype yet, so extraction only counts up to 100%.
 // The estimate follows the song's length; the real job takes about a minute for a four-minute song.
 function extract(s,li){
-  if(s.state) return; s.state="busy";
+  if(s.state) return;
+  if(!s.example&&!hasData(s)){ toast("이 곡의 화음 데이터 파일이 필요해요 (곡 추가로 .json을 함께 넣기)"); return }
+  s.state="busy";
   const total=Math.max(8,Math.min(20,(s.dur||200)*0.05))*1000, t0=performance.now();
   const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
   const pct=document.createElement("span"); pct.className="pct"; pct.setAttribute("role","status"); btn.replaceWith(pct);
@@ -283,7 +285,7 @@ function extract(s,li){
   meta.append(st);
   const tick=()=>{
     const p=Math.min(1,(performance.now()-t0)/total);
-    if(p>=1){ s.state="done"; if(s.example) pref("ex","done"); else dbPut(s); render(); return }
+    if(p>=1){ s.state="done"; const pk=packOf(s); if(pk&&pk.info) s.result=pk.info; if(s.example) pref("ex","done"); else dbPut(s); render(); return }
     bar.style.setProperty("--p",(p*100).toFixed(1)+"%"); pct.textContent=Math.floor(p*100)+"%";
     requestAnimationFrame(tick);
   };
@@ -291,14 +293,31 @@ function extract(s,li){
 }
 
 // ---------------------------------------------------------------- storage (this device only)
-const DB=new Promise(res=>{ try{ const r=indexedDB.open("hwaeumwang",1);
-  r.onupgradeneeded=()=>r.result.createObjectStore("songs",{keyPath:"id"});
+const DB=new Promise(res=>{ try{ const r=indexedDB.open("hwaeumwang",2);
+  r.onupgradeneeded=()=>{ const d=r.result; if(!d.objectStoreNames.contains("songs")) d.createObjectStore("songs",{keyPath:"id"});
+    if(!d.objectStoreNames.contains("packs")) d.createObjectStore("packs",{keyPath:"title"}) };
   r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); r.onblocked=()=>res(null) }catch(e){res(null)} });
 async function dbAll(){ const db=await DB; if(!db) return [];
   return new Promise(res=>{ try{ const q=db.transaction("songs").objectStore("songs").getAll(); q.onsuccess=()=>res(q.result||[]); q.onerror=()=>res([]) }catch(e){res([])} }) }
 async function dbPut(s){ const db=await DB; if(!db) return false;
   return new Promise(res=>{ try{ const tx=db.transaction("songs","readwrite"); tx.objectStore("songs").put(s); tx.oncomplete=()=>res(true); tx.onerror=tx.onabort=()=>res(false) }catch(e){res(false)} }) }
 async function dbDel(id){ const db=await DB; if(db) try{ db.transaction("songs","readwrite").objectStore("songs").delete(id) }catch(e){} }
+
+// ---------------------------------------------------------------- data packs
+// What extraction produces for one song (melody, the three harmony lines, where each bundle is sung,
+// the sung harmony audio), as a .json file.  Until a server does the extraction, packs made
+// elsewhere are imported next to the mp3 and kept on this device.
+const PACKS={};
+const norm=t=>(t||"").trim();
+const packOf=s=>PACKS[norm(s.title)]||null;
+async function packsLoad(){ const db=await DB; if(!db) return;
+  await new Promise(res=>{ try{ const q=db.transaction("packs").objectStore("packs").getAll(); q.onsuccess=()=>{ for(const p of q.result||[]) PACKS[p.title]=p; res() }; q.onerror=()=>res() }catch(e){ res() } }) }
+async function packSave(p){ PACKS[p.title]=p; const db=await DB; if(!db) return false;
+  return new Promise(res=>{ try{ const tx=db.transaction("packs","readwrite"); tx.objectStore("packs").put(p); tx.oncomplete=()=>res(true); tx.onerror=tx.onabort=()=>res(false) }catch(e){ res(false) } }) }
+function packValid(p){ return p&&p.hwaeum===1&&typeof p.title==="string"&&Array.isArray(p.mel)&&Array.isArray(p.up)&&Array.isArray(p.down) }
+// Files for three songs are published next to the page in the web preview only; the app has none.
+let BUILTIN=false; const slugOf=s=>BUILTIN?HARM[norm(s.title)]||null:null;
+const hasData=s=>!!(packOf(s)||slugOf(s));
 
 // ---------------------------------------------------------------- reading a music file
 function decodeText(bytes,enc){
@@ -337,10 +356,14 @@ function readDuration(file){
     setTimeout(()=>fin(0),4000); try{ a.src=URL.createObjectURL(file) }catch(e){ fin(0) } });
 }
 async function addFiles(files){
-  const note=$("note"); note.className="note"; let added=0, skipped=0, unsaved=0, wrong=0;
+  const note=$("note"); note.className="note"; let added=0, skipped=0, unsaved=0, wrong=0, packs=0;
   for(const f of files){
     if(songs.some(s=>s.name===f.name&&s.size===f.size)){ skipped++; continue }
     note.textContent=`읽는 중: ${f.name}`;
+    if(/\.json$/i.test(f.name)||/json/i.test(f.type||"")){               // a data pack
+      note.textContent=`읽는 중: ${f.name}`;
+      try{ const p=JSON.parse(await f.text()); if(!packValid(p)) throw 0; p.title=norm(p.title); await packSave(p); packs++ }catch(e){ wrong++ }
+      continue }
     if(!/\.mp3$/i.test(f.name)&&!/mpeg|mp3/i.test(f.type||"")){ wrong++; continue }
     const [tag,dur]=await Promise.all([readTags(f),readDuration(f)]);
     const s={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:f.name,size:f.size,added:Date.now(),
@@ -349,7 +372,9 @@ async function addFiles(files){
     if(!(await dbPut(s))) unsaved++;
   }
   const parts=[]; if(skipped) parts.push(`이미 있는 ${skipped}곡은 건너뛰었습니다.`);
-  if(wrong) parts.push(`mp3가 아닌 파일 ${wrong}개는 넣지 않았습니다.`);
+  if(packs) parts.push(`화음 데이터 ${packs}곡분을 넣었습니다.`);
+  if(wrong) parts.push(`쓸 수 없는 파일 ${wrong}개는 넣지 않았습니다.`);
+  if(packs) render();
   if(unsaved){ parts.push(`${unsaved}곡은 이 기기에 저장하지 못해 페이지를 닫으면 사라집니다.`); note.className="note err" }
   note.textContent=parts.join(" ");
 }
@@ -407,16 +432,25 @@ function renderStyle(){
   for(const [id,name,desc] of STYLES){ const b=document.createElement("button"); b.type="button"; b.textContent=name; b.setAttribute("role","radio"); b.setAttribute("aria-checked",s.style===id);
     b.onclick=()=>{ if(s.style!==id) chooseStyle(s,id) };
     seg.append(b); if(s.style===id) $("segDesc").textContent=desc+(id==="arranged"
-      ?(ARRANGED[(s.title||"").trim()]?" 편곡 화음이 들어가는 묶음만 화음 열에 남기고 나머지는 솔로로 보냈어요.":" 이 곡은 아직 편곡 결과가 없어 묶음을 나누지 못했어요 (실제 추출 연결 후 가능).")
+      ?(coverOf(s)?" 편곡 화음이 들어가는 묶음만 화음 열에 남기고 나머지는 솔로로 보냈어요.":" 이 곡은 아직 편곡 결과가 없어 묶음을 나누지 못했어요 (실제 추출 연결 후 가능).")
       :" 모든 묶음에 적용되고, 묶음마다 3도 위·아래를 따로 바꿀 수 있어요.") }
 }
 // Which bundles the arranged voice actually sings in (1) and which it leaves to the lead alone (0);
 // measured from the arranged harmony written for each analysed song.
 const ARRANGED={"사랑했지만":[0,0,1,1,1,0,1,1,1],"숙녀에게":[0,1,1,1,1],"청혼":[0,1,1,0,0,1,1,1]};
+const coverOf=s=>(packOf(s)&&packOf(s).arrangedCover)||(slugOf(s)||s.example?ARRANGED[norm(s.title)]:null)||null;
+// The sung harmony of one style: from the song's pack if it has one, else from the files hosted with the page.
+async function harmSrc(s,mode){
+  const pk=packOf(s), key=norm(s.title)+"|"+mode;
+  if(harmCache[key]) return harmCache[key];
+  if(pk&&pk.harm&&pk.harm[mode]){ const r=await fetch(pk.harm[mode]); harmCache[key]=URL.createObjectURL(await r.blob()); return harmCache[key] }
+  const slug=slugOf(s); if(!slug) return null;
+  const r=await fetch(`harm/${slug}_${mode}.mp3`); if(!r.ok) throw 0; harmCache[key]=URL.createObjectURL(await r.blob()); return harmCache[key];
+}
 // A third above or below is a choice per bundle.  "Arranged" is a plan for the whole song: it also
 // decides where harmony is sung at all, so choosing it sorts the bundles into 화음 and 솔로.
 function chooseStyle(s,id){
-  const n=(s.parts||[]).length, plan=ARRANGED[(s.title||"").trim()];
+  const n=(s.parts||[]).length, plan=coverOf(s);
   if(id==="arranged"){
     s.partsBefore=s.parts.slice();                                  // remembered, to put back when leaving 편곡
     if(plan&&plan.length===n) s.parts=plan.map(v=>v?0:1);
@@ -450,15 +484,12 @@ async function playBundle(s,b,i,btn){
   if(!b.t){ toast("이 곡은 아직 소절 위치를 모릅니다 (실제 추출 연결 후 가능)"); return }
   stopPlay();
   if(!playUrl){ try{ playUrl=URL.createObjectURL(s.blob); player.src=playUrl }catch(e){ toast("이 파일을 재생할 수 없습니다"); return } }
-  const mode=s.parts[i]===0?s.modes[i]:null, slug=HARM[(s.title||"").trim()];     // 솔로 bundles play the original alone
-  withHarm=!!(mode&&slug);
-  if(mode&&!slug) toast("이 곡은 화음 음원이 아직 없어 원곡만 들려드려요");
-  stopAt=b.t[1]; playing=i; btn.classList.add("on");
-  if(withHarm){ const url=`harm/${slug}_${mode}.mp3`;
-    if(harmUrl!==url){                                              // fetched whole, so seeking never depends on the host
-      try{ if(!harmCache[url]){ const r=await fetch(url); if(!r.ok) throw 0; harmCache[url]=URL.createObjectURL(await r.blob()) }
-        if(playing!==i) return; harmUrl=url; harm.src=harmCache[url] }
-      catch(e){ withHarm=false; toast("화음 음원을 불러오지 못해 원곡만 들려드려요") } } }
+  const mode=s.parts[i]===0?s.modes[i]:null;                       // 솔로 bundles play the original alone
+  withHarm=false; stopAt=b.t[1]; playing=i; btn.classList.add("on");
+  if(mode){ const key=norm(s.title)+"|"+mode;
+    try{ const url=await harmSrc(s,mode); if(playing!==i) return;
+      if(url){ if(harmUrl!==key){ harmUrl=key; harm.src=url } withHarm=true } else toast("이 곡은 화음 음원이 아직 없어 원곡만 들려드려요") }
+    catch(e){ toast("화음 음원을 불러오지 못해 원곡만 들려드려요") } }
   await Promise.all([ready(player),withHarm?ready(harm):null]);
   if(playing!==i) return;                                                            // stopped or switched while loading
   try{ player.currentTime=b.t[0]; if(withHarm) harm.currentTime=b.t[0] }catch(e){}
@@ -469,7 +500,7 @@ const mmss=t=>Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0");
 let current=null;
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>{ t.hidden=true },2200) }
 async function bundlesOf(s){
-  const times=TIMES[(s.title||"").trim()]||[];
+  const times=(packOf(s)&&packOf(s).bundleTimes)||(slugOf(s)||s.example?TIMES[norm(s.title)]:null)||[];
   if(s.example) return s.bundles.map((b,i)=>({...b,t:times[i]||null}));
   if(s.lyrics===undefined&&s.blob){ s.lyrics=(await readTags(s.blob)).lyrics||""; dbPut(s) }   // songs added before lyrics were read
   const lines=(s.lyrics||"").replace(/\r/g,"").split("\n").map(l=>l.trim()).filter(Boolean), out=[];
@@ -511,7 +542,7 @@ function renderEditor(bs){
         btn.append(ms) }
       const move=()=>{ if(playing===i) stopPlay(); s.parts[i]=(c+1)%COLS.length;
         // a bundle brought into 화음 where the arranged voice is silent gets a third above instead
-        const plan=ARRANGED[(s.title||"").trim()];
+        const plan=coverOf(s);
         if(s.parts[i]===0&&s.modes[i]==="arranged"&&!(plan&&plan[i])) s.modes[i]="up";
         if(s.parts[i]===0&&s.style==="arranged"&&plan&&plan[i]) s.modes[i]="arranged";
         saveParts(s); renderEditor(bs) };
@@ -583,10 +614,9 @@ function voice(ctx,out,f,at,end){
 // matches the bundle being sung is audible, and nothing sounds in 솔로 bundles.
 const vox={up:new Audio(),down:new Audio(),arranged:new Audio()}; let voxFor=null, voxOn=false, voxSync=0;
 async function voxLoad(){
-  const slug=HARM[(pr.song.title||"").trim()]; if(!slug) return false;
-  if(voxFor===slug) return true;
-  try{ for(const k in vox){ const url=`harm/${slug}_${k}.mp3`; if(!harmCache[url]){ const r=await fetch(url); if(!r.ok) throw 0; harmCache[url]=URL.createObjectURL(await r.blob()) } vox[k].src=harmCache[url]; vox[k].volume=0 }
-    voxFor=slug; return true }catch(e){ return false }
+  const key=norm(pr.song.title); if(voxFor===key) return true;
+  try{ for(const k in vox){ const url=await harmSrc(pr.song,k); if(!url) return false; vox[k].src=url; vox[k].volume=0 }
+    voxFor=key; return true }catch(e){ return false }
 }
 async function voxStart(){
   if(!(await voxLoad())){ toast("이 곡은 육성 화음이 아직 없어 신스 리드로 들려드려요"); tone="lead"; renderTone(); guideStart(); return }
@@ -615,7 +645,7 @@ function guideStart(){ guideStop(); if(tone==="voice"){ voxStart(); return } if(
   const t=prTime(); gIdx=pr.notes.findIndex(n=>n.t+n.d>t); if(gIdx<0) gIdx=pr.notes.length; guideSchedule(); gTimer=setInterval(guideSchedule,120) }
 function guideStop(){ voxStop(); clearInterval(gTimer); if(gOut){ try{ gOut.disconnect() }catch(e){} gOut=null } }
 const DATA={};
-async function songData(s){ const slug=HARM[(s.title||"").trim()]; if(!slug) return null;
+async function songData(s){ if(packOf(s)) return packOf(s); const slug=slugOf(s); if(!slug) return null;
   if(DATA[slug]===undefined){ try{ const r=await fetch(`data/${slug}.json`); DATA[slug]=r.ok?await r.json():null }catch(e){ DATA[slug]=null } }
   return DATA[slug] }
 const pr={song:null,notes:[],audio:new Audio(),url:null,ctx:null,an:null,buf:null,stream:null,on:false,raf:0,trace:[],recent:[],stat:null,cur:0,tA:0,tP:0,lo:48,hi:72,
@@ -678,7 +708,7 @@ async function openPractice(){
   if(!s||s.state!=="done"){ prEmpty("연습할 곡을 골라 주세요","‘내 음악창고’에서 화음 추출이 끝난 곡을 누르고, ‘소절 편집’에서 화음을 고른 뒤 여기로 오세요."); return }
   if(!s.blob){ prEmpty("예시 곡은 연습할 수 없어요","파일이 없는 예시 카드입니다. 같은 곡의 mp3를 창고에 추가해 주세요."); return }
   const data=await songData(s), bs=await bundlesOf(s);
-  if(!data){ prEmpty("아직 이 곡의 멜로디가 없어요","실제 화음 추출이 연결되면 어떤 곡이든 연습할 수 있습니다. 지금은 사랑했지만·숙녀에게·청혼만 됩니다."); return }
+  if(!data){ prEmpty("아직 이 곡의 화음 데이터가 없어요","‘내 음악창고’의 곡 추가에서 이 곡의 화음 데이터 파일(.json)을 함께 넣어 주세요."); return }
   if(!Array.isArray(s.parts)||s.parts.length!==bs.length) s.parts=bs.map(()=>0);
   if(!STYLES.some(x=>x[0]===s.style)) s.style="up";
   if(!Array.isArray(s.modes)||s.modes.length!==bs.length) s.modes=bs.map(()=>s.style);
@@ -778,5 +808,6 @@ for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
   if(t.dataset.screen==="edit") openEditTab(); else if(t.dataset.screen==="practice") openPractice(); else show(t.dataset.screen==="library"?"library":"soon");
 };
 render();
-dbAll().then(rows=>{ if(rows.length){ songs=rows; $("note").textContent=""; render() } });
+fetch("data/saranghaetjiman.json").then(r=>{ BUILTIN=r.ok }).catch(()=>{});
+Promise.all([dbAll(),packsLoad()]).then(([rows])=>{ if(rows.length){ songs=rows; $("note").textContent="" } render() });
 </script>
