@@ -772,9 +772,14 @@ async function prMix(i){                              // play the take over the 
   const len=tk.chunks.reduce((a,c)=>a+c.length,0), buf=pr.ctx.createBuffer(1,len,tk.sr), ch=buf.getChannelData(0); let o=0;
   for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
   const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=1.8; src.connect(g); g.connect(pr.ctx.destination);
-  try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); pr.audio.currentTime=tk.t0; origDuck(true); await pr.audio.play() }catch(e){ origDuck(false); toast("재생을 시작하지 못했습니다"); return }
-  src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
+  // claimed before the first wait: a tap during that wait (practice, another card, the same button
+  // twice) must be able to cancel this, or the take starts on top of the practice and the
+  // microphone hears the recorded voice from the earphones
   pr.mixing=i; pr.mixSrc=src; pr.mixEnd=tk.end; prUpdateCards();
+  try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); if(pr.mixSrc!==src) return; pr.audio.currentTime=tk.t0; origDuck(true); await pr.audio.play() }
+  catch(e){ if(pr.mixSrc===src){ prMixStop(); toast("재생을 시작하지 못했습니다") } return }
+  if(pr.mixSrc!==src) return;
+  src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
 }
 function prMixStop(){ if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
 const cv=$("prCanvas"), g2=cv.getContext("2d");
