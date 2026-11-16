@@ -583,6 +583,30 @@ const YIN_THR=0.10, MEDIAN_S=0.13, DELAY_S=0.10, EDGE_S=0.06, TOL=0.5;   // tune
 // (a page that opens the microphone puts Android in call mode: quiet playback, headset microphone).
 const NATIVE_MIC=!!(window.Android&&typeof Android.micStart==="function");
 let MIC_LAG=NATIVE_MIC?0.12:0.06;                      // samples arrive in 46 ms blocks through the app
+// ---- automatic latency.  The sound reaches the ear late (a Bluetooth headset adds 0.15-0.3 s) and
+// the voice reaches the app late, so a singer who is exactly with the music appears behind the
+// score by an amount that depends on the headset.  It is measured from the singing itself: the
+// recent pitches are slid against the harmony line and the shift where most of them land on their
+// notes is the delay.  Each kind of output (Bluetooth, wired, speaker) remembers its own value.
+const lag={raw:[],next:0,auto:false,route:"",last:0};
+function lagRoute(){ let r="spk"; try{ const a=window.Android&&Android.audioInfo?Android.audioInfo():""; r=/블루투스/.test(a)?"bt":/유선/.test(a)?"wired":"spk" }catch(e){} return r }
+function lagLoad(){ lag.route=lagRoute(); const v=parseFloat(pref("lag_"+lag.route));
+  MIC_LAG=isFinite(v)?v:(lag.route==="bt"?0.30:NATIVE_MIC?0.12:0.06); lag.auto=isFinite(v); lag.raw=[] }
+function lagEstimate(now){
+  const hs=pr.notes.filter(n=>n.h), S=lag.raw; if(S.length<60||!hs.length) return;
+  const rates=[], L0=0.06, step=0.02, N=48;                         // total delay from 0.06 to 1.0 s
+  for(let k=0;k<N;k++){ const L=L0+k*step; let hit=0,tot=0,j=0;
+    for(const [t,m] of S){ const tj=t-L; while(j<hs.length&&hs[j].t+hs[j].d<tj) j++; if(j>=hs.length) break; const n=hs[j]; if(n.t>tj) continue;
+      let d=m-n.h; d-=12*Math.round(d/12); tot++; if(Math.abs(d)<=TOL) hit++ }
+    rates.push(tot>=40?hit/tot:0) }
+  let best=0; for(let k=1;k<N;k++) if(rates[k]>rates[best]) best=k;
+  if(rates[best]<0.45) return;                                       // not singing the harmony (yet): nothing to learn from
+  // held notes make a plateau of equally good shifts; its middle is the delay
+  let a=best,b=best; while(a>0&&rates[a-1]>=rates[best]-0.03) a--; while(b<N-1&&rates[b+1]>=rates[best]-0.03) b++;
+  const total=L0+(a+b)/2*step, cur=MIC_LAG+DELAY_S, curRate=rates[Math.max(0,Math.min(N-1,Math.round((cur-L0)/step)))];
+  if(rates[best]-curRate<0.03&&Math.abs(total-cur)<0.05) return;     // already as good as it gets
+  MIC_LAG=Math.max(0,Math.min(0.9,MIC_LAG+(total-cur)*0.6)); lag.auto=true; lag.last=now; pref("lag_"+lag.route,MIC_LAG.toFixed(3));
+}
 let micWait=null;
 window.__micState=(state,rate)=>{ if(micWait){ const w=micWait; micWait=null; w(state==="on"?rate:0,state) } };
 // The unprocessed microphone carries a DC offset and low rumble that a pitch detector happily
@@ -749,7 +773,7 @@ async function prMix(i){                              // play the take over the 
   for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
   const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=1.8; src.connect(g); g.connect(pr.ctx.destination);
   try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); pr.audio.currentTime=tk.t0; origDuck(true); await pr.audio.play() }catch(e){ origDuck(false); toast("재생을 시작하지 못했습니다"); return }
-  src.start(0,Math.min(buf.duration,MIC_LAG+0.04));   // the microphone hears you a little late; skip that much
+  src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
   pr.mixing=i; pr.mixSrc=src; pr.mixEnd=tk.end; prUpdateCards();
 }
 function prMixStop(){ if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
@@ -785,7 +809,7 @@ pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now();
 pr.audio.onended=()=>{ prMixStop(); prStop() };
 async function prStart(){
   if(pr.on||!pr.song) return;
-  prMixStop();
+  prMixStop(); if(lag.route!==lagRoute()||!lag.route) lagLoad(); lag.next=0;
   try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") await pr.ctx.resume() }catch(e){ pr.ctx=null }
   origRoute();
   const micFail=why=>{ pr.an=null; $("prNote").className="note err";
@@ -812,7 +836,7 @@ function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop()
 function prRelease(){ prMixStop(); prStop(); if(pr.proc){ try{ pr.proc.disconnect() }catch(e){} pr.proc.onaudioprocess=null; pr.proc=null }
   if(pr.native){ try{ Android.micStop() }catch(e){} pr.native=false; pr.an=null }
   if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
-function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; $("prSeek").value=t; if(pr.on) guideStart(); prDraw() }
+function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; lag.raw=[]; $("prSeek").value=t; if(pr.on) guideStart(); prDraw() }
 function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) pr.cur=0;
   while(pr.cur<ns.length&&ns[pr.cur].t+ns[pr.cur].d<t) pr.cur++;
   return pr.cur<ns.length&&ns[pr.cur].t<=t?pr.cur:-1 }
@@ -823,6 +847,8 @@ function prTick(){
   const stale=pr.native&&performance.now()-mic.last>200;                           // the app stopped sending: no pitch, not the old one
   if(pr.an&&!stale){ pr.an.getFloatTimeDomainData(pr.buf); const f=pr.native?detectPitch(pr.buf,pr.micSr,Math.max(0.0012,mic.floor*1.6),0.2):detectPitch(pr.buf,pr.micSr||pr.ctx.sampleRate); mic.hz=f; m=f?69+12*Math.log2(f/440):NaN;
     pr.recent.push([t,m]); while(pr.recent.length&&pr.recent[0][0]<t-MEDIAN_S) pr.recent.shift();
+    if(!isNaN(m)){ lag.raw.push([t,m]); while(lag.raw.length&&lag.raw[0][0]<t-14) lag.raw.shift() }
+    if(t>lag.next){ lag.next=t+2.5; lagEstimate(t) }
     const v=pr.recent.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN }
   else if(stale){ pr.recent.length=0; mic.hz=0 }
   const i=prTarget(tj), n=i>=0?pr.notes[i]:null; let text="", cls="verdict";
@@ -877,7 +903,8 @@ render();
 // version, and in the app how Android is routing sound: this is what to read out when the sound misbehaves
 function showVer(){ try{
   const now=performance.now(); if(now-mic.t0>=1900){ mic.rate=Math.round(mic.blocks*1000/Math.max(1,now-mic.t0)); mic.blocks=0; mic.t0=now }
-  const m=pr.native?` · 마이크 ${mic.rate}블록/초 · 크기 ${mic.rms.toFixed(4)} (바닥 ${mic.floor.toFixed(4)}) · ${mic.hz?Math.round(mic.hz)+"Hz":"음 없음"}`:"";
+  const lg=` · 지연 보정 ${Math.round((MIC_LAG+DELAY_S)*1000)}ms${lag.auto?"(자동)":""}`;
+  const m=lg+(!pr.native?"":` · 마이크 ${mic.rate}블록/초 · 크기 ${mic.rms.toFixed(4)} (바닥 ${mic.floor.toFixed(4)}) · ${mic.hz?Math.round(mic.hz)+"Hz":"음 없음"}`);
   $("ver").textContent="화음왕 "+(window.Android&&Android.version?Android.version():"웹 미리보기")+(window.Android&&Android.audioInfo?" · "+Android.audioInfo():"")+m }catch(e){} }
 showVer(); setInterval(showVer,2000);
 fetch("data/saranghaetjiman.json").then(r=>{ BUILTIN=r.ok }).catch(()=>{});
