@@ -3,9 +3,14 @@ package com.hojung1231.hwaeumwang;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.webkit.JavascriptInterface;
 import android.view.WindowManager;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
@@ -89,7 +94,39 @@ public class MainActivity extends Activity {
             }
         });
 
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);   // the volume keys always move the music volume
+        web.addJavascriptInterface(new Bridge(), "Android");
+
         if (state == null) web.loadUrl(START); else web.restoreState(state);
+    }
+
+    /**
+     * Opening the microphone makes the WebView treat the session as a phone call: Android switches
+     * to call mode, a Bluetooth headset drops to its low-quality call link and playback follows the
+     * (separate, usually low) call volume, so the music turns quiet.  Practising is not a call:
+     * put the phone back in normal mode so the song keeps playing as music, in full quality, while
+     * the phone's own microphone listens.
+     */
+    private void keepMusicMode() {
+        final AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        final Handler h = new Handler(Looper.getMainLooper());
+        for (long delay : new long[]{0, 300, 1000, 2500, 5000}) {       // the WebView sets call mode a moment after capture starts
+            h.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        am.stopBluetoothSco();
+                        am.setBluetoothScoOn(false);
+                        am.setMode(AudioManager.MODE_NORMAL);
+                    } catch (Exception ignored) { }
+                }
+            }, delay);
+        }
+    }
+
+    private class Bridge {
+        @JavascriptInterface
+        public void micStarted() { runOnUiThread(new Runnable() { @Override public void run() { keepMusicMode(); } }); }
     }
 
     @Override
