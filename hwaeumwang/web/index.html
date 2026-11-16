@@ -585,19 +585,30 @@ const NATIVE_MIC=!!(window.Android&&typeof Android.micStart==="function");
 let MIC_LAG=NATIVE_MIC?0.12:0.06;                      // samples arrive in 46 ms blocks through the app
 let micWait=null;
 window.__micState=(state,rate)=>{ if(micWait){ const w=micWait; micWait=null; w(state==="on"?rate:0,state) } };
+// The unprocessed microphone carries a DC offset and low rumble that a pitch detector happily
+// reads as one steady low note.  A steep high-pass at about 85 Hz (four one-pole stages, state
+// kept across blocks) removes it; sung notes start above that.
+const hp={x:[0,0,0,0],y:[0,0,0,0]}; const mic={blocks:0,last:0,rms:0,hz:0,rate:0,t0:0,floor:1};
 window.__mic=b64=>{                                    // one block of 16-bit samples from the app
   if(!pr.native) return; const bin=atob(b64), n=bin.length>>1, x=pr.buf&&pr.buf.length===n?pr.buf:new Float32Array(n);
-  for(let i=0;i<n;i++){ let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8); if(v>32767) v-=65536; x[i]=v/32768 }
-  pr.buf=x; pr.fresh=true; prRecordSamples(x,pr.micSr);
+  const a=1/(1+2*Math.PI*85/(pr.micSr||44100)), hx=hp.x, hy=hp.y; let e=0;
+  for(let i=0;i<n;i++){ let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8); if(v>32767) v-=65536; v/=32768;
+    for(let k=0;k<4;k++){ const y=a*(hy[k]+v-hx[k]); hx[k]=v; hy[k]=y; v=y }
+    x[i]=v; e+=v*v }
+  pr.buf=x; pr.fresh=true; mic.blocks++; mic.last=performance.now(); mic.rms=Math.sqrt(e/n);
+  // The raw microphone has no automatic gain, so "loud enough to be singing" cannot be a fixed
+  // number: it is judged against the room's own noise level, tracked as a slowly rising minimum.
+  mic.floor=Math.min(mic.floor*1.01,Math.max(mic.rms,0.0004));
+  prRecordSamples(x,pr.micSr);
 };
 function nativeMicStart(){ return new Promise(res=>{ const to=setTimeout(()=>{ micWait=null; res([0,"timeout"]) },30000);
   micWait=(rate,state)=>{ clearTimeout(to); res([rate,state]) }; try{ Android.micStart() }catch(e){ clearTimeout(to); micWait=null; res([0,"error"]) } }) }
-function detectPitch(x,sr){
+function detectPitch(x,sr,gate=0.008,thr=YIN_THR){
   const W=x.length>>1; let rms=0; for(let i=0;i<W;i++) rms+=x[i]*x[i]; rms=Math.sqrt(rms/W);
-  if(rms<0.008) return 0;
-  const tmin=Math.floor(sr/1100), tmax=Math.min(W-1,Math.floor(sr/65)), d=new Float32Array(tmax+2); let run=0, best=-1;
+  if(rms<gate) return 0;
+  const tmin=Math.floor(sr/1100), tmax=Math.min(W-1,Math.floor(sr/75)), d=new Float32Array(tmax+2); let run=0, best=-1;
   for(let tau=1;tau<=tmax+1;tau++){ let q=0; for(let i=0;i<W;i++){ const v=x[i]-x[i+tau]; q+=v*v } run+=q; d[tau]=run>0?q*tau/run:1 }
-  for(let tau=Math.max(2,tmin);tau<=tmax;tau++){ if(d[tau]<YIN_THR){ while(tau+1<=tmax&&d[tau+1]<d[tau]) tau++; best=tau; break } }
+  for(let tau=Math.max(2,tmin);tau<=tmax;tau++){ if(d[tau]<thr){ while(tau+1<=tmax&&d[tau+1]<d[tau]) tau++; best=tau; break } }
   if(best<0) return 0;
   const a=d[best-1],b=d[best],c=d[best+1], sh=(a+c-2*b)!==0?0.5*(a-c)/(a+c-2*b):0;
   return sr/(best+sh);
@@ -809,9 +820,11 @@ let prN=0;
 function prTick(){
   if(!pr.on) return;
   const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN; voxTick(t);
-  if(pr.an){ pr.an.getFloatTimeDomainData(pr.buf); const f=detectPitch(pr.buf,pr.micSr||pr.ctx.sampleRate); m=f?69+12*Math.log2(f/440):NaN;
+  const stale=pr.native&&performance.now()-mic.last>200;                           // the app stopped sending: no pitch, not the old one
+  if(pr.an&&!stale){ pr.an.getFloatTimeDomainData(pr.buf); const f=pr.native?detectPitch(pr.buf,pr.micSr,Math.max(0.0012,mic.floor*1.6),0.2):detectPitch(pr.buf,pr.micSr||pr.ctx.sampleRate); mic.hz=f; m=f?69+12*Math.log2(f/440):NaN;
     pr.recent.push([t,m]); while(pr.recent.length&&pr.recent[0][0]<t-MEDIAN_S) pr.recent.shift();
     const v=pr.recent.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN }
+  else if(stale){ pr.recent.length=0; mic.hz=0 }
   const i=prTarget(tj), n=i>=0?pr.notes[i]:null; let text="", cls="verdict";
   if(n&&n.h){ const st=pr.stat[i]; st.n++;
     if(!isNaN(m)){ let diff=m-n.h; diff-=12*Math.round(diff/12); let ok=Math.abs(diff)<=TOL;
@@ -862,7 +875,10 @@ for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
 };
 render();
 // version, and in the app how Android is routing sound: this is what to read out when the sound misbehaves
-function showVer(){ try{ $("ver").textContent="화음왕 "+(window.Android&&Android.version?Android.version():"웹 미리보기")+(window.Android&&Android.audioInfo?" · "+Android.audioInfo():"") }catch(e){} }
+function showVer(){ try{
+  const now=performance.now(); if(now-mic.t0>=1900){ mic.rate=Math.round(mic.blocks*1000/Math.max(1,now-mic.t0)); mic.blocks=0; mic.t0=now }
+  const m=pr.native?` · 마이크 ${mic.rate}블록/초 · 크기 ${mic.rms.toFixed(4)} (바닥 ${mic.floor.toFixed(4)}) · ${mic.hz?Math.round(mic.hz)+"Hz":"음 없음"}`:"";
+  $("ver").textContent="화음왕 "+(window.Android&&Android.version?Android.version():"웹 미리보기")+(window.Android&&Android.audioInfo?" · "+Android.audioInfo():"")+m }catch(e){} }
 showVer(); setInterval(showVer,2000);
 fetch("data/saranghaetjiman.json").then(r=>{ BUILTIN=r.ok }).catch(()=>{});
 Promise.all([dbAll(),packsLoad()]).then(([rows])=>{ if(rows.length){ songs=rows; $("note").textContent="" } render() });
