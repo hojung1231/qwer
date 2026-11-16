@@ -861,7 +861,9 @@ for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
   if(t.dataset.screen==="edit") openEditTab(); else if(t.dataset.screen==="practice") openPractice(); else show(t.dataset.screen==="library"?"library":"soon");
 };
 render();
-try{ $("ver").textContent="화음왕 "+(window.Android&&Android.version?Android.version():"웹 미리보기") }catch(e){}
+// version, and in the app how Android is routing sound: this is what to read out when the sound misbehaves
+function showVer(){ try{ $("ver").textContent="화음왕 "+(window.Android&&Android.version?Android.version():"웹 미리보기")+(window.Android&&Android.audioInfo?" · "+Android.audioInfo():"") }catch(e){} }
+showVer(); setInterval(showVer,2000);
 fetch("data/saranghaetjiman.json").then(r=>{ BUILTIN=r.ok }).catch(()=>{});
 Promise.all([dbAll(),packsLoad()]).then(([rows])=>{ if(rows.length){ songs=rows; $("note").textContent="" } render() });
 </script>

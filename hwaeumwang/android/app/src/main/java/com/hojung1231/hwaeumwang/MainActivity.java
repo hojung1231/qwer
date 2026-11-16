@@ -127,6 +127,29 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String version() { return BuildConfig.VERSION_NAME; }
+
+        /** How Android is routing sound right now, for the status line at the bottom of the page. */
+        @JavascriptInterface
+        public String audioInfo() {
+            try {
+                AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                int mode = am.getMode();
+                String m = mode == AudioManager.MODE_NORMAL ? "일반" : mode == AudioManager.MODE_IN_COMMUNICATION ? "통화" : mode == AudioManager.MODE_IN_CALL ? "전화" : String.valueOf(mode);
+                String out = "";
+                for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                    int t = d.getType();
+                    if (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) out += " 블루투스(음악)";
+                    else if (t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) out += " 블루투스(통화)";
+                    else if (t == AudioDeviceInfo.TYPE_BLE_HEADSET || t == AudioDeviceInfo.TYPE_BLE_SPEAKER) out += " 블루투스(LE)";
+                    else if (t == AudioDeviceInfo.TYPE_WIRED_HEADSET || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || t == AudioDeviceInfo.TYPE_USB_HEADSET) out += " 유선";
+                }
+                return "모드 " + m + " · 통화연결 " + (am.isBluetoothScoOn() ? "켜짐" : "꺼짐") + " · 미디어음량 "
+                        + am.getStreamVolume(AudioManager.STREAM_MUSIC) + "/" + am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        + " · 연결:" + (out.isEmpty() ? " 없음" : out);
+            } catch (Exception e) {
+                return "";
+            }
+        }
     }
 
     private void tellPage(final String js) {
@@ -142,10 +165,15 @@ public class MainActivity extends Activity {
                 AudioRecord rec = null;
                 try {
                     int min = AudioRecord.getMinBufferSize(MIC_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-                    // VOICE_RECOGNITION: the raw microphone, without the call-style noise gating that eats soft singing
-                    rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, MIC_RATE, AudioFormat.CHANNEL_IN_MONO,
-                            AudioFormat.ENCODING_PCM_16BIT, Math.max(min, MIC_CHUNK * 4));
                     AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    // Not VOICE_RECOGNITION or VOICE_COMMUNICATION: with a Bluetooth headset connected those
+                    // make Android open the headset's call link, and playback then drops to call quality
+                    // and call volume.  UNPROCESSED (or plain MIC) records from the phone and leaves the
+                    // headset playing music.
+                    boolean raw = "true".equals(am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED));
+                    rec = new AudioRecord(raw ? MediaRecorder.AudioSource.UNPROCESSED : MediaRecorder.AudioSource.MIC, MIC_RATE,
+                            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, Math.max(min, MIC_CHUNK * 4));
+                    try { am.stopBluetoothSco(); am.setBluetoothScoOn(false); am.setMode(AudioManager.MODE_NORMAL); } catch (Exception ignored) { }
                     for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
                         if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC) { rec.setPreferredDevice(d); break; }   // not the headset's
                     }
