@@ -836,7 +836,10 @@ function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop()
 function prRelease(){ prMixStop(); prStop(); if(pr.proc){ try{ pr.proc.disconnect() }catch(e){} pr.proc.onaudioprocess=null; pr.proc=null }
   if(pr.native){ try{ Android.micStop() }catch(e){} pr.native=false; pr.an=null }
   if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
-function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; lag.raw=[]; $("prSeek").value=t; if(pr.on) guideStart(); prDraw() }
+function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; lag.raw=[]; pr.recent=[];
+  // what was sung from here on is about to be sung again: clear its dots and its marks
+  pr.trace=pr.trace.filter(q=>q.t<t-0.5); pr.notes.forEach((n,i)=>{ if(n.t+n.d>t){ const st=pr.stat[i]; st.n=0; st.sung=0; st.hit=0 } });
+  $("prSeek").value=t; if(pr.on) guideStart(); prUpdateStats(); prDraw() }
 function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) pr.cur=0;
   while(pr.cur<ns.length&&ns[pr.cur].t+ns[pr.cur].d<t) pr.cur++;
   return pr.cur<ns.length&&ns[pr.cur].t<=t?pr.cur:-1 }
@@ -846,7 +849,9 @@ function prTick(){
   const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN; voxTick(t);
   const stale=pr.native&&performance.now()-mic.last>200;                           // the app stopped sending: no pitch, not the old one
   if(pr.an&&!stale){ pr.an.getFloatTimeDomainData(pr.buf); const f=pr.native?detectPitch(pr.buf,pr.micSr,Math.max(0.0012,mic.floor*1.6),0.2):detectPitch(pr.buf,pr.micSr||pr.ctx.sampleRate); mic.hz=f; m=f?69+12*Math.log2(f/440):NaN;
-    pr.recent.push([t,m]); while(pr.recent.length&&pr.recent[0][0]<t-MEDIAN_S) pr.recent.shift();
+    // only the last moments count.  Entries from *later* in the song (left over when the position
+    // jumped back) must go too, or the median freezes on everything sung before the jump.
+    pr.recent.push([t,m]); pr.recent=pr.recent.filter(x=>x[0]<=t+0.001&&x[0]>=t-MEDIAN_S);
     if(!isNaN(m)){ lag.raw.push([t,m]); while(lag.raw.length&&lag.raw[0][0]<t-14) lag.raw.shift() }
     if(t>lag.next){ lag.next=t+2.5; lagEstimate(t) }
     const v=pr.recent.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN }
