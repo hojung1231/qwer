@@ -19,10 +19,14 @@ android {
         debug { signingConfig signingConfigs.preview }
         release { signingConfig signingConfigs.preview; minifyEnabled false }
     }
+    buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 
-dependencies { implementation "androidx.webkit:webkit:1.11.0" }
+dependencies {
+    implementation "androidx.webkit:webkit:1.11.0"
+    implementation "androidx.core:core:1.13.1"
+}
 
 // The screens are the web page in ../../web/index.html.  It is written as a page fragment
 // (no <html>/<body>), so it is wrapped into a full document and bundled as an asset here.

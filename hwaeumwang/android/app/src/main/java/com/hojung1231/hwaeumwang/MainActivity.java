@@ -2,17 +2,20 @@ package com.hojung1231.hwaeumwang;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.Intent;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioDeviceInfo;
+import android.media.AudioFormat;
 import android.media.AudioManager;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.webkit.JavascriptInterface;
+import android.util.Base64;
 import android.view.WindowManager;
-import android.webkit.PermissionRequest;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -21,24 +24,41 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+
 /**
- * The whole interface is the bundled web page; this activity only gives it what a browser tab
- * would: a secure origin, the microphone, and a file picker.
+ * The whole interface is the bundled web page.  This activity gives it a secure origin and a file
+ * picker, listens to the microphone on its behalf, and keeps the app up to date.
  */
 public class MainActivity extends Activity {
     private static final String START = "https://appassets.androidplatform.net/assets/www/index.html";
+    private static final String RELEASE = "https://github.com/hojung1231/qwer/releases/download/hwaeumwang-preview/";
     private static final int REQ_FILES = 1, REQ_MIC = 2;
+    private static final int MIC_RATE = 44100, MIC_CHUNK = 2048;
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
-    private PermissionRequest pendingMic;
+    private volatile boolean micOn;
+    private Thread micThread;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);   // practising takes minutes without touching the screen
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
         web = new WebView(this);
         web.setBackgroundColor(0xFF0C0C10);
         setContentView(web);
@@ -50,7 +70,6 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(false);
         s.setAllowContentAccess(true);
 
-        // Serve the bundled page from an https origin: getUserMedia needs a secure context.
         final WebViewAssetLoader assets = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
         web.setWebViewClient(new WebViewClient() {
@@ -61,19 +80,6 @@ public class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public void onPermissionRequest(final PermissionRequest request) {
-                boolean wantsMic = false;
-                for (String r : request.getResources()) if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(r)) wantsMic = true;
-                if (!wantsMic) { request.deny(); return; }
-                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    request.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-                } else {
-                    pendingMic = request;
-                    requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
-                }
-            }
-
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileCallback != null) fileCallback.onReceiveValue(null);
@@ -94,41 +100,94 @@ public class MainActivity extends Activity {
             }
         });
 
-        setVolumeControlStream(AudioManager.STREAM_MUSIC);   // the volume keys always move the music volume
         web.addJavascriptInterface(new Bridge(), "Android");
-
         if (state == null) web.loadUrl(START); else web.restoreState(state);
+        checkForUpdate();
     }
 
-    /**
-     * Opening the microphone makes the WebView treat the session as a phone call: Android switches
-     * to call mode, a Bluetooth headset drops to its low-quality call link and playback follows the
-     * (separate, usually low) call volume, so the music turns quiet.  Practising is not a call:
-     * put the phone back in normal mode so the song keeps playing as music, in full quality, while
-     * the phone's own microphone listens.
-     */
-    private void keepMusicMode() {
-        final AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        final Handler h = new Handler(Looper.getMainLooper());
-        for (long delay : new long[]{0, 300, 1000, 2500, 5000}) {       // the WebView sets call mode a moment after capture starts
-            h.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        am.stopBluetoothSco();
-                        am.setBluetoothScoOn(false);
-                        am.setMode(AudioManager.MODE_NORMAL);
-                    } catch (Exception ignored) { }
-                }
-            }, delay);
-        }
-    }
-
+    // ------------------------------------------------------------------ microphone
+    // The page does not open the microphone itself.  A web page that captures audio is treated by
+    // Android as a phone call: playback drops to call volume and a Bluetooth headset switches to
+    // its call link and its own microphone.  Recording here, as plain audio from the phone's
+    // built-in microphone, leaves the music alone, and the samples are handed to the page.
     private class Bridge {
         @JavascriptInterface
-        public void micStarted() { runOnUiThread(new Runnable() { @Override public void run() { keepMusicMode(); } }); }
+        public void micStart() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startMic();
+                    else requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void micStop() { stopMic(); }
+
+        @JavascriptInterface
+        public String version() { return BuildConfig.VERSION_NAME; }
     }
 
+    private void tellPage(final String js) {
+        web.post(new Runnable() { @Override public void run() { web.evaluateJavascript(js, null); } });
+    }
+
+    private void startMic() {
+        if (micOn) { tellPage("window.__micState&&__micState('on'," + MIC_RATE + ")"); return; }
+        micOn = true;
+        micThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                AudioRecord rec = null;
+                try {
+                    int min = AudioRecord.getMinBufferSize(MIC_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+                    // VOICE_RECOGNITION: the raw microphone, without the call-style noise gating that eats soft singing
+                    rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, MIC_RATE, AudioFormat.CHANNEL_IN_MONO,
+                            AudioFormat.ENCODING_PCM_16BIT, Math.max(min, MIC_CHUNK * 4));
+                    AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                    for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                        if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_MIC) { rec.setPreferredDevice(d); break; }   // not the headset's
+                    }
+                    if (rec.getState() != AudioRecord.STATE_INITIALIZED) throw new IllegalStateException("init");
+                    rec.startRecording();
+                    tellPage("window.__micState&&__micState('on'," + MIC_RATE + ")");
+                    short[] buf = new short[MIC_CHUNK];
+                    ByteBuffer bytes = ByteBuffer.allocate(MIC_CHUNK * 2).order(ByteOrder.LITTLE_ENDIAN);
+                    while (micOn) {
+                        int n = 0;
+                        while (n < MIC_CHUNK && micOn) {
+                            int r = rec.read(buf, n, MIC_CHUNK - n);
+                            if (r <= 0) break;
+                            n += r;
+                        }
+                        if (n < MIC_CHUNK) continue;
+                        bytes.clear();
+                        bytes.asShortBuffer().put(buf);
+                        tellPage("window.__mic&&__mic('" + Base64.encodeToString(bytes.array(), Base64.NO_WRAP) + "')");
+                    }
+                } catch (Exception e) {
+                    tellPage("window.__micState&&__micState('error',0)");
+                } finally {
+                    micOn = false;
+                    if (rec != null) { try { rec.stop(); } catch (Exception ignored) { } rec.release(); }
+                }
+            }
+        }, "mic");
+        micThread.start();
+    }
+
+    private void stopMic() { micOn = false; }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != REQ_MIC) return;
+        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startMic();
+        else tellPage("window.__micState&&__micState('denied',0)");
+    }
+
+    // ------------------------------------------------------------------ files
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
@@ -147,18 +206,112 @@ public class MainActivity extends Activity {
         fileCallback = null;
     }
 
-    @Override
-    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
-        super.onRequestPermissionsResult(request, permissions, results);
-        if (request != REQ_MIC || pendingMic == null) return;
-        if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            pendingMic.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
-        } else {
-            pendingMic.deny();
-        }
-        pendingMic = null;
+    // ------------------------------------------------------------------ updates
+    // Each build publishes version.json next to the APK.  On launch the app compares it with its
+    // own build number and offers the newer APK; Android itself then asks to confirm the install.
+    private void checkForUpdate() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    JSONObject v = new JSONObject(new String(fetch(RELEASE + "version.json", null), "UTF-8"));
+                    final int code = v.getInt("versionCode");
+                    final String name = v.optString("versionName", "");
+                    if (code <= BuildConfig.VERSION_CODE) return;
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (isFinishing()) return;
+                            new AlertDialog.Builder(MainActivity.this)
+                                    .setTitle("새 버전이 있습니다")
+                                    .setMessage("화음왕 " + name + " 버전이 나왔습니다. 지금 업데이트할까요?\n(현재 " + BuildConfig.VERSION_NAME + ")")
+                                    .setNegativeButton("나중에", null)
+                                    .setPositiveButton("업데이트", (d, w) -> downloadUpdate())
+                                    .show();
+                        }
+                    });
+                } catch (Exception ignored) { }      // offline, or nothing published: start as usual
+            }
+        }, "update-check").start();
     }
 
+    private void downloadUpdate() {
+        final AlertDialog progress = new AlertDialog.Builder(this).setTitle("업데이트 받는 중").setMessage("0%").setCancelable(false).show();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    File dir = new File(getCacheDir(), "updates");
+                    dir.mkdirs();
+                    final File apk = new File(dir, "hwaeumwang.apk");
+                    OutputStream out = new FileOutputStream(apk);
+                    fetch(RELEASE + "hwaeumwang.apk", new Sink(out, progress));
+                    out.close();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            progress.dismiss();
+                            Uri uri = FileProvider.getUriForFile(MainActivity.this, "com.hojung1231.hwaeumwang.files", apk);
+                            Intent install = new Intent(Intent.ACTION_VIEW);
+                            install.setDataAndType(uri, "application/vnd.android.package-archive");
+                            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                            startActivity(install);
+                        }
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            progress.dismiss();
+                            new AlertDialog.Builder(MainActivity.this).setTitle("업데이트를 받지 못했습니다")
+                                    .setMessage("인터넷 연결을 확인한 뒤 앱을 다시 열어 주세요.").setPositiveButton("확인", null).show();
+                        }
+                    });
+                }
+            }
+        }, "update-download").start();
+    }
+
+    /** Receives a download and shows how far along it is. */
+    private class Sink {
+        final OutputStream out; final AlertDialog dialog; long done; int shown = -1;
+        Sink(OutputStream out, AlertDialog dialog) { this.out = out; this.dialog = dialog; }
+        void write(byte[] b, int n, long total) throws Exception {
+            out.write(b, 0, n);
+            done += n;
+            final int pct = total > 0 ? (int) (done * 100 / total) : -1;
+            if (pct != shown) {
+                shown = pct;
+                runOnUiThread(new Runnable() { @Override public void run() { dialog.setMessage(pct >= 0 ? pct + "%" : (done / 1024) + " KB"); } });
+            }
+        }
+    }
+
+    /** GET a URL, following redirects.  With a sink the body is streamed to it; without, it is returned. */
+    private byte[] fetch(String address, Sink sink) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(20000);
+        c.setInstanceFollowRedirects(true);
+        c.setRequestProperty("Cache-Control", "no-cache");
+        try {
+            if (c.getResponseCode() != 200) throw new IllegalStateException("HTTP " + c.getResponseCode());
+            long total = c.getContentLengthLong();
+            InputStream in = c.getInputStream();
+            ByteArrayOutputStream mem = sink == null ? new ByteArrayOutputStream() : null;
+            byte[] b = new byte[16384];
+            int n;
+            while ((n = in.read(b)) > 0) {
+                if (sink != null) sink.write(b, n, total); else mem.write(b, 0, n);
+            }
+            in.close();
+            return mem == null ? null : mem.toByteArray();
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    // ------------------------------------------------------------------ lifecycle
     @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
@@ -168,6 +321,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        stopMic();
         web.onPause();      // stops playback when the app goes to the background
     }
 

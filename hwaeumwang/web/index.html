@@ -226,7 +226,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <p class="note" id="prNote"></p>
     </div>
   </section>
-  <p class="ver" id="ver">화음왕 · 11월 16일판 d</p>
+  <p class="ver" id="ver">화음왕</p>
   <section id="screen-soon" class="soon" hidden><p>이 탭은 아직 만들지 않았습니다.</p></section>
 </main>
 
@@ -578,7 +578,20 @@ function openEditTab(){
 // ---------------------------------------------------------------- practice
 // The original plays in the earphones; the melody and the chosen harmony line scroll in from the
 // right; the microphone pitch is drawn on the same lane and judged against the harmony.
-const YIN_THR=0.10, MEDIAN_S=0.13, DELAY_S=0.10, EDGE_S=0.06, TOL=0.5, MIC_LAG=0.06;   // tuned earlier on isolated vocals
+const YIN_THR=0.10, MEDIAN_S=0.13, DELAY_S=0.10, EDGE_S=0.06, TOL=0.5;   // tuned earlier on isolated vocals
+// In the app the phone's microphone is read by the app itself and its samples are passed in here
+// (a page that opens the microphone puts Android in call mode: quiet playback, headset microphone).
+const NATIVE_MIC=!!(window.Android&&typeof Android.micStart==="function");
+let MIC_LAG=NATIVE_MIC?0.12:0.06;                      // samples arrive in 46 ms blocks through the app
+let micWait=null;
+window.__micState=(state,rate)=>{ if(micWait){ const w=micWait; micWait=null; w(state==="on"?rate:0,state) } };
+window.__mic=b64=>{                                    // one block of 16-bit samples from the app
+  if(!pr.native) return; const bin=atob(b64), n=bin.length>>1, x=pr.buf&&pr.buf.length===n?pr.buf:new Float32Array(n);
+  for(let i=0;i<n;i++){ let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8); if(v>32767) v-=65536; x[i]=v/32768 }
+  pr.buf=x; pr.fresh=true; prRecordSamples(x,pr.micSr);
+};
+function nativeMicStart(){ return new Promise(res=>{ const to=setTimeout(()=>{ micWait=null; res([0,"timeout"]) },30000);
+  micWait=(rate,state)=>{ clearTimeout(to); res([rate,state]) }; try{ Android.micStart() }catch(e){ clearTimeout(to); micWait=null; res([0,"error"]) } }) }
 function detectPitch(x,sr){
   const W=x.length>>1; let rms=0; for(let i=0;i<W;i++) rms+=x[i]*x[i]; rms=Math.sqrt(rms/W);
   if(rms<0.008) return 0;
@@ -680,9 +693,10 @@ const pr={song:null,notes:[],audio:new Audio(),url:null,ctx:null,an:null,buf:nul
   bundles:[],takes:{},cards:[],mixing:-1,mixSrc:null,mixEnd:0,proc:null};
 // ---- per-bundle cards: jump there, mark it finished, then hear your own take over the original
 const bundleAt=t=>{ for(let i=pr.bundles.length-1;i>=0;i--){ const r=pr.bundles[i].t; if(r&&t>=r[0]&&t<r[1]) return i } return -1 };
-function prRecord(e){                                 // keep the latest take of each harmony bundle (mono, half rate)
+function prRecord(e){ prRecordSamples(e.inputBuffer.getChannelData(0),pr.ctx.sampleRate) }
+function prRecordSamples(x,sr){                       // keep the latest take of each harmony bundle (mono, half rate)
   if(!pr.on||pr.mixing>=0) return;
-  const x=e.inputBuffer.getChannelData(0), sr=pr.ctx.sampleRate, t=prTime()-x.length/sr, i=bundleAt(t);
+  const t=prTime()-x.length/sr-(pr.native?0.05:0), i=bundleAt(t);
   if(i<0||pr.song.parts[i]!==0) return;
   let tk=pr.takes[i]; if(!tk||Math.abs(t-tk.end)>0.5) tk=pr.takes[i]={t0:t,end:t,chunks:[],sr:sr/2};      // a jump starts a new take
   const out=new Int16Array(x.length>>1); for(let k=0;k<out.length;k++) out[k]=Math.max(-1,Math.min(1,(x[2*k]+x[2*k+1])*0.5))*32767;
@@ -763,14 +777,21 @@ async function prStart(){
   prMixStop();
   try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") await pr.ctx.resume() }catch(e){ pr.ctx=null }
   origRoute();
-  if(!pr.an&&pr.ctx){                                // the microphone is optional: without it the lane still scrolls
+  const micFail=why=>{ pr.an=null; $("prNote").className="note err";
+    $("prNote").textContent=why==="denied"?"마이크 권한이 없어 내 목소리는 표시되지 않습니다. 휴대폰 설정의 앱 권한에서 마이크를 허용해 주세요."
+      :"마이크를 쓸 수 없어서 내 목소리는 표시되지 않습니다. 원곡과 악보는 그대로 볼 수 있습니다." };
+  if(!pr.an&&NATIVE_MIC){                            // the app listens and hands over the samples
+    const [rate,state]=await nativeMicStart();
+    if(rate){ pr.native=true; pr.micSr=rate; pr.buf=new Float32Array(2048); pr.an={ getFloatTimeDomainData(){} };       // pr.buf is refilled by __mic
+      $("prNote").className="note"; $("prNote").textContent="이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 원곡 소리를 주워 판정이 흐려집니다." }
+    else micFail(state) }
+  else if(!pr.an&&pr.ctx){                           // in a browser: the page opens the microphone itself
     try{ pr.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-      pr.an=pr.ctx.createAnalyser(); pr.an.fftSize=2048; pr.buf=new Float32Array(2048);
+      pr.an=pr.ctx.createAnalyser(); pr.an.fftSize=2048; pr.buf=new Float32Array(2048); pr.micSr=pr.ctx.sampleRate;
       const src=pr.ctx.createMediaStreamSource(pr.stream); src.connect(pr.an);
       pr.proc=pr.ctx.createScriptProcessor(4096,1,1); const mute=pr.ctx.createGain(); mute.gain.value=0;      // recorded, never played back live
-      src.connect(pr.proc); pr.proc.connect(mute); mute.connect(pr.ctx.destination); pr.proc.onaudioprocess=prRecord;
-      try{ window.Android&&Android.micStarted() }catch(e){} }                 // in the app: stay in music mode, not call mode
-    catch(e){ pr.an=null; $("prNote").className="note err"; $("prNote").textContent="마이크를 쓸 수 없어서 내 목소리는 표시되지 않습니다. 이 미리보기 화면은 마이크 사용이 막혀 있을 수 있어요. 원곡과 악보는 그대로 볼 수 있습니다." } }
+      src.connect(pr.proc); pr.proc.connect(mute); mute.connect(pr.ctx.destination); pr.proc.onaudioprocess=prRecord }
+    catch(e){ micFail("error") } }
   try{ await pr.audio.play() }catch(e){ toast("재생을 시작하지 못했습니다"); return }
   pr.on=true; pr.tA=pr.audio.currentTime; pr.tP=performance.now(); $("prPlay").textContent="정지";
   try{ navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{}) }catch(e){}
@@ -778,6 +799,7 @@ async function prStart(){
 }
 function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop(); setTimeout(prUpdateCards,0); $("prPlay").textContent="시작"; $("prVerdict").textContent="대기"; $("prVerdict").className="verdict" }
 function prRelease(){ prMixStop(); prStop(); if(pr.proc){ try{ pr.proc.disconnect() }catch(e){} pr.proc.onaudioprocess=null; pr.proc=null }
+  if(pr.native){ try{ Android.micStop() }catch(e){} pr.native=false; pr.an=null }
   if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
 function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; $("prSeek").value=t; if(pr.on) guideStart(); prDraw() }
 function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) pr.cur=0;
@@ -787,7 +809,7 @@ let prN=0;
 function prTick(){
   if(!pr.on) return;
   const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN; voxTick(t);
-  if(pr.an){ pr.an.getFloatTimeDomainData(pr.buf); const f=detectPitch(pr.buf,pr.ctx.sampleRate); m=f?69+12*Math.log2(f/440):NaN;
+  if(pr.an){ pr.an.getFloatTimeDomainData(pr.buf); const f=detectPitch(pr.buf,pr.micSr||pr.ctx.sampleRate); m=f?69+12*Math.log2(f/440):NaN;
     pr.recent.push([t,m]); while(pr.recent.length&&pr.recent[0][0]<t-MEDIAN_S) pr.recent.shift();
     const v=pr.recent.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN }
   const i=prTarget(tj), n=i>=0?pr.notes[i]:null; let text="", cls="verdict";
@@ -839,6 +861,7 @@ for(const t of document.querySelectorAll(".tab")) t.onclick=()=>{
   if(t.dataset.screen==="edit") openEditTab(); else if(t.dataset.screen==="practice") openPractice(); else show(t.dataset.screen==="library"?"library":"soon");
 };
 render();
+try{ $("ver").textContent="화음왕 "+(window.Android&&Android.version?Android.version():"웹 미리보기") }catch(e){}
 fetch("data/saranghaetjiman.json").then(r=>{ BUILTIN=r.ok }).catch(()=>{});
 Promise.all([dbAll(),packsLoad()]).then(([rows])=>{ if(rows.length){ songs=rows; $("note").textContent="" } render() });
 </script>
