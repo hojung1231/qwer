@@ -24,7 +24,7 @@ body{background:var(--bg);color:var(--ink);font:500 15px/1.45 var(--font);letter
 button{font:inherit;color:inherit;letter-spacing:inherit;cursor:pointer;border:0;background:none}
 button:focus-visible{outline:2px solid var(--brand);outline-offset:3px;border-radius:12px}
 
-main{height:100%;overflow-y:auto;padding-block:14px 190px}
+main{height:100%;overflow-y:auto;padding-block:14px 130px}
 .brand{display:flex;align-items:center;justify-content:space-between;min-height:36px}
 .wordmark{display:flex;align-items:center;gap:7px;font-weight:900;font-size:1.02rem;letter-spacing:-.02em}
 .wordmark svg{width:20px;height:20px}
@@ -90,18 +90,24 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .modes button{padding:6px 0;border-radius:8px;font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap}
 .modes button[aria-checked="true"]{background:var(--brand);color:var(--on-brand)}
 .play.on::before{border:0;width:10px;height:10px;border-radius:2px;background:var(--on-brand);margin:0}
-.lane{position:relative;height:min(46vh,380px);min-height:230px;border-radius:20px;background:var(--raise);overflow:hidden;margin-top:6px}
+.lane{position:relative;height:min(31vh,260px);min-height:170px;border-radius:20px;background:var(--raise);overflow:hidden;margin-top:6px}
 .lane canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-.verdict{position:absolute;left:12px;top:12px;font-weight:900;font-size:.9rem;padding:5px 12px;border-radius:999px;background:var(--bg);color:var(--muted)}
+.verdict{position:absolute;left:10px;top:8px;font-weight:900;font-size:.8rem;padding:3px 10px;border-radius:999px;background:var(--bg);color:var(--muted)}
 .verdict.ok{color:var(--ok)} .verdict.bad{color:var(--danger)}
-.score{position:absolute;right:12px;top:10px;text-align:right;line-height:1.15}
-.score b{display:block;font-size:1.5rem;font-weight:900;font-variant-numeric:tabular-nums}
+.score{position:absolute;right:12px;top:6px;text-align:right;line-height:1.15}
+.score b{display:block;font-size:1.15rem;font-weight:900;font-variant-numeric:tabular-nums}
 .score span{font-size:.7rem;color:var(--muted);font-weight:700}
-#prSeek{width:100%;margin:16px 0 0;accent-color:var(--brand)}
+#prSeek{width:100%;margin:10px 0 0;accent-color:var(--brand)}
 .times{display:flex;justify-content:space-between;color:var(--muted);font-size:.76rem;font-variant-numeric:tabular-nums}
-.transport{display:flex;gap:10px;margin-top:12px}
-.transport .go{flex:1;height:52px;border-radius:999px;background:var(--brand);color:var(--on-brand);font-weight:900;font-size:1.02rem}
-.transport .mini{height:52px;padding:0 16px;border-radius:999px;background:var(--raise);font-weight:700;color:var(--ink)}
+.pr-title{font-size:1.05rem;font-weight:900;letter-spacing:-.02em;margin:10px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.transport{display:flex;gap:18px;margin-top:6px;justify-content:center;align-items:center}
+.transport button{display:flex;align-items:center;justify-content:center;border-radius:50%}
+.transport .go{width:46px;height:46px;background:var(--brand);color:var(--on-brand)}
+.transport .go svg{width:20px;height:20px}
+.transport .mini{width:38px;height:38px;background:var(--raise);color:var(--ink)}
+.transport .mini svg{width:22px;height:22px}
+#prNowSlot{margin-top:8px}
+#prNowSlot:empty{margin:0}
 .pcards{display:flex;flex-direction:column;gap:10px}
 .pcard{background:var(--raise);border:1.5px solid transparent;border-radius:18px;padding:14px 15px}
 .pcard.now{border-color:var(--brand)}
@@ -123,12 +129,12 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .steps button{padding:9px 0 7px;border-radius:10px;color:var(--muted);font-weight:700;font-size:.95rem;line-height:1.1}
 .steps button small{display:block;font-size:.62rem;font-weight:700;margin-top:2px;min-height:1em}
 .steps button[aria-checked="true"]{background:var(--brand);color:var(--on-brand);font-weight:900}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(164px + env(safe-area-inset-bottom,0px));z-index:7;background:var(--ink);color:var(--bg);
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(128px + env(safe-area-inset-bottom,0px));z-index:7;background:var(--ink);color:var(--bg);
   font-weight:700;font-size:.86rem;padding:10px 16px;border-radius:999px;white-space:nowrap;max-width:calc(100% - 40px);overflow:hidden;text-overflow:ellipsis}
 .song.open{cursor:pointer}
 .soon{display:grid;place-items:center;min-height:55vh;color:var(--muted);text-align:center}
 
-.fab{position:fixed;right:max(20px,env(safe-area-inset-right,0px));bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:5;
+.fab{position:fixed;right:max(20px,env(safe-area-inset-right,0px));bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:5;
   display:flex;align-items:center;gap:8px;height:52px;padding:0 20px 0 16px;border-radius:999px;background:var(--brand);color:var(--on-brand);
   font-weight:900;box-shadow:0 12px 28px -10px var(--brand)}
 .fab svg{width:20px;height:20px}
@@ -140,14 +146,12 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .crash{position:fixed;left:12px;right:12px;top:calc(8px + env(safe-area-inset-top,0px));z-index:20;background:var(--danger);color:#fff;font-size:.8rem;font-weight:700;padding:10px 12px;border-radius:12px;overflow-wrap:anywhere}
 .ver{color:var(--muted);font-size:.68rem;text-align:center;margin:26px 0 0;opacity:.7}
 
-.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:6;
-  width:min(360px,calc(100% - 2*max(20px,env(safe-area-inset-left,0px))));display:flex;padding:6px;border-radius:999px;
-  background:var(--glass);-webkit-backdrop-filter:blur(22px) saturate(1.6);backdrop-filter:blur(22px) saturate(1.6);
-  border:1px solid var(--hair);box-shadow:0 18px 40px -18px rgba(0,0,0,.55)}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px 7px;border-radius:999px;color:var(--muted);font-size:.68rem;font-weight:700}
-.tab svg{width:22px;height:22px}
-.tab[aria-selected="true"]{color:var(--ink);background:var(--press)}
-.tab[aria-selected="true"] svg{color:var(--brand)}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;justify-content:space-around;
+  padding:0 max(20px,env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(20px,env(safe-area-inset-left,0px));
+  background:var(--glass);-webkit-backdrop-filter:blur(22px) saturate(1.6);backdrop-filter:blur(22px) saturate(1.6);border-top:1px solid var(--hair)}
+.tab{flex:1;max-width:120px;height:48px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.tab svg{width:24px;height:24px}
+.tab[aria-selected="true"]{color:var(--brand)}
 .tab:disabled{opacity:.4;cursor:default}
 @media (prefers-reduced-motion:no-preference){.bundle{animation:pop .18s ease}.song{transition:background .15s}.fab{transition:transform .12s}}
 @keyframes pop{from{transform:scale(.94);opacity:.4}}
@@ -198,21 +202,21 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <span id="prEmptyText"></span>
     </div>
     <div id="prBody" hidden>
-      <h1 class="ed-title" id="prTitle"></h1>
-      <p class="sub" id="prSub"></p>
+      <h1 class="pr-title" id="prTitle"></h1>
       <div class="lane">
         <canvas id="prCanvas"></canvas>
         <div class="verdict" id="prVerdict">대기</div>
         <div class="score"><b id="prAcc">–</b><span>음정 일치</span></div>
       </div>
+      <div id="prNowSlot"></div>
       <input id="prSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="재생 위치">
       <div class="times"><span id="prNow">0:00</span><span id="prEnd">0:00</span></div>
       <div class="transport">
-        <button type="button" id="prBack" class="mini">−10초</button>
-        <button type="button" id="prPlay" class="go">시작</button>
-        <button type="button" id="prFwd" class="mini">+10초</button>
+        <button type="button" id="prBack" class="mini" aria-label="10초 뒤로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.2 3.6v3.6h3.6"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="currentColor" stroke="none">10</text></svg></button>
+        <button type="button" id="prPlay" class="go" aria-label="시작"></button>
+        <button type="button" id="prFwd" class="mini" aria-label="10초 앞으로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 3.6v3.6h-3.6"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="currentColor" stroke="none">10</text></svg></button>
       </div>
-      <h2 class="label">묶음별 연습</h2>
+      <h2 class="label" id="prCardsLabel">묶음별 연습</h2>
       <div class="pcards" id="prCards"></div>
       <h2 class="label" id="oLabel">원곡 소리 크기</h2>
       <div class="vol"><input id="oVol" type="range" min="50" max="300" step="10" value="100" aria-labelledby="oLabel"><output id="oOut">100%</output></div>
@@ -243,17 +247,14 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 <div class="toast" id="toast" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="화면 전환">
-  <button class="tab" role="tab" aria-selected="true" data-screen="library" type="button">
+  <button class="tab" role="tab" aria-selected="true" data-screen="library" type="button" aria-label="내 음악창고">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9 4.2v10.1a3.2 3.2 0 1 0 1.8 2.9V8.3l7-1.6v6a3.2 3.2 0 1 0 1.8 2.9V3.4a.9.9 0 0 0-1.1-.9l-8.8 2a.9.9 0 0 0-.7.9z"/></svg>
-    내 음악창고
   </button>
-  <button class="tab" role="tab" aria-selected="false" data-screen="edit" type="button">
+  <button class="tab" role="tab" aria-selected="false" data-screen="edit" type="button" aria-label="소절 편집">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="7" height="6" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="6" rx="1.8"/><path d="M13.5 7.5h7M3.5 16.5h7" stroke-dasharray="1.5 2.6"/></svg>
-    소절 편집
   </button>
-  <button class="tab" role="tab" aria-selected="false" data-screen="practice" type="button">
+  <button class="tab" role="tab" aria-selected="false" data-screen="practice" type="button" aria-label="연습">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
-    연습
   </button>
 </nav>
 
@@ -738,7 +739,7 @@ function prRecordSamples(x,sr){                       // keep the latest take of
   tk.chunks.push(out); tk.end=t+x.length/sr;
 }
 function prRenderCards(){
-  const s=pr.song, box=$("prCards"); box.textContent=""; pr.cards=[];
+  const s=pr.song, box=$("prCards"); box.textContent=""; box.hidden=false; $("prNowSlot").textContent=""; $("prNowSlot").style.minHeight=""; pr.cards=[];
   if(!Array.isArray(s.completed)||s.completed.length!==pr.bundles.length) s.completed=pr.bundles.map(()=>false);
   pr.bundles.forEach((b,i)=>{ if(s.parts[i]!==0||!b.t) return;
     const card=document.createElement("div"); card.className="pcard";
@@ -765,6 +766,7 @@ function prUpdateCards(){
     c.mix.hidden=!done; c.mix.disabled=!has; c.mix.textContent=pr.mixing===c.i?"■ 멈춤":"▶ 내 목소리 + 원곡";
     c.hint.textContent=done?(has?"":"녹음은 페이지를 닫으면 사라집니다. 이 묶음을 다시 부르면 들을 수 있어요."):(has?"다 불렀으면 ‘완성’을 눌러 주세요.":"이 묶음을 끝까지 부르면 ‘완성’을 누를 수 있어요.");
     c.hint.hidden=!c.hint.textContent }
+  prPlaceCards();
 }
 async function prMix(i){                              // play the take over the original, from where the take began
   if(pr.mixing===i){ prMixStop(); return }
@@ -782,6 +784,24 @@ async function prMix(i){                              // play the take over the 
   src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
 }
 function prMixStop(){ if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
+function prPlayIcon(on){ const b=$("prPlay"); b.setAttribute("aria-label",on?"정지":"시작");
+  b.innerHTML=on?'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>'
+               :'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8a.8.8 0 0 0-1.2.7z"/></svg>' }
+prPlayIcon(false);
+// The card of the bundle being practised sits right under the score while the page is at the top.
+// Once the page is scrolled it goes back to its own place in the list, so the list reads in order.
+function prPlaceCards(){
+  const slot=$("prNowSlot"), box=$("prCards"), t=prTime(); if(!pr.cards.length){ slot.textContent=""; return }
+  let cur=pr.cards.find(c=>bundleAt(t)===c.i)||pr.cards.find(c=>pr.bundles[c.i].t[1]>t)||pr.cards[pr.cards.length-1];
+  // the slot keeps its height while it is empty: the page must not shrink under the finger
+  if(document.querySelector("main").scrollTop>24) cur=null; else slot.style.minHeight="";
+  if(!cur&&slot.firstChild) slot.style.minHeight=slot.offsetHeight+"px";
+  for(const c of pr.cards){ const want=c===cur?slot:box; if(c.card.parentNode===want) continue;
+    if(want===slot) slot.append(c.card);
+    else{ const nx=pr.cards.find(o=>o.i>c.i&&o.card.parentNode===box); box.insertBefore(c.card,nx?nx.card:null) } }
+  $("prCardsLabel").hidden=box.hidden=!box.children.length;
+}
+document.querySelector("main").addEventListener("scroll",()=>{ if(!$("screen-practice").hidden&&pr.song) prPlaceCards() },{passive:true});
 const cv=$("prCanvas"), g2=cv.getContext("2d");
 function prEmpty(title,text){ $("prEmpty").hidden=false; $("prBody").hidden=true; $("prEmptyTitle").textContent=title; $("prEmptyText").textContent=text }
 async function openPractice(){
@@ -803,8 +823,6 @@ async function openPractice(){
   pr.song=s; pr.bundles=bs; pr.stat=pr.notes.map(()=>({n:0,sung:0,hit:0}));
   const ps=pr.notes.flatMap(n=>n.h?[n.m,n.h]:[n.m]); pr.lo=Math.min(...ps)-3; pr.hi=Math.max(...ps)+3;
   $("prEmpty").hidden=true; $("prBody").hidden=false; $("prTitle").textContent=s.title;
-  const nh=pr.notes.filter(n=>n.h).length;
-  $("prSub").textContent=`회색은 멜로디, 금색은 내가 부를 화음 · 화음 ${nh}음`;
   const last=pr.notes[pr.notes.length-1]; $("prSeek").max=Math.ceil(last.t+last.d+2); $("prEnd").textContent=mmss(+$("prSeek").max);
   $("prNote").textContent="이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 원곡 소리를 주워 판정이 흐려집니다.";
   prRenderCards(); renderGuide(); renderTone(); origApply(); prUpdateStats(); prDraw();
@@ -833,11 +851,11 @@ async function prStart(){
       src.connect(pr.proc); pr.proc.connect(mute); mute.connect(pr.ctx.destination); pr.proc.onaudioprocess=prRecord }
     catch(e){ micFail("error") } }
   try{ await pr.audio.play() }catch(e){ toast("재생을 시작하지 못했습니다"); return }
-  pr.on=true; pr.tA=pr.audio.currentTime; pr.tP=performance.now(); $("prPlay").textContent="정지";
+  pr.on=true; pr.tA=pr.audio.currentTime; pr.tP=performance.now(); prPlayIcon(true);
   try{ navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{}) }catch(e){}
   guideStart(); cancelAnimationFrame(pr.raf); pr.raf=requestAnimationFrame(prTick);
 }
-function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop(); setTimeout(prUpdateCards,0); $("prPlay").textContent="시작"; $("prVerdict").textContent="대기"; $("prVerdict").className="verdict" }
+function prStop(){ if(!pr.on) return; pr.audio.pause(); pr.on=false; guideStop(); setTimeout(prUpdateCards,0); prPlayIcon(false); $("prVerdict").textContent="대기"; $("prVerdict").className="verdict" }
 function prRelease(){ prMixStop(); prStop(); if(pr.proc){ try{ pr.proc.disconnect() }catch(e){} pr.proc.onaudioprocess=null; pr.proc=null }
   if(pr.native){ try{ Android.micStop() }catch(e){} pr.native=false; pr.an=null }
   if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
@@ -883,7 +901,7 @@ function prDraw(){
   if(!w||!h) return; if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h }
   const cs=getComputedStyle(document.documentElement), C=k=>cs.getPropertyValue("--"+k).trim();
   g2.clearRect(0,0,w,h); if(!pr.notes.length) return;
-  const t=prTime()-MIC_LAG-DELAY_S, span=6, x0=w*0.3, pps=w/span, top=52*dpr, lo=pr.lo, hi=pr.hi;
+  const t=prTime()-MIC_LAG-DELAY_S, span=6, x0=w*0.3, pps=w/span, top=42*dpr, lo=pr.lo, hi=pr.hi;
   const y=p=>top+(h-top-12*dpr)*(1-(p-lo)/(hi-lo)), nh=Math.max(7*dpr,(h-top)/(hi-lo)*0.85), bar=(xa,xb,p,hgt)=>{ g2.beginPath(); g2.roundRect(xa,y(p)-hgt/2,Math.max(3*dpr,xb-xa-2*dpr),hgt,Math.min(hgt/2,5*dpr)); g2.fill() };
   pr.notes.forEach((n,i)=>{ const xa=x0+(n.t-t)*pps, xb=x0+(n.t+n.d-t)*pps; if(xb<0||xa>w) return;
     g2.fillStyle=C("muted"); g2.globalAlpha=.42; bar(xa,xb,n.m,nh*0.55); g2.globalAlpha=1;       // melody: thin, grey
