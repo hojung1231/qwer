@@ -99,7 +99,24 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .score span{font-size:.7rem;color:var(--muted);font-weight:700}
 #prSeek{width:100%;margin:10px 0 0;accent-color:var(--brand)}
 .times{display:flex;justify-content:space-between;color:var(--muted);font-size:.76rem;font-variant-numeric:tabular-nums}
-.pr-title{font-size:1.05rem;font-weight:900;letter-spacing:-.02em;margin:10px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr-head{display:flex;align-items:center;gap:10px;margin:6px 0 4px}
+.pr-title{flex:1;min-width:0;font-size:1.05rem;font-weight:900;letter-spacing:-.02em;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gear{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.gear svg{width:22px;height:22px}
+.gear[aria-expanded="true"]{color:var(--brand);background:var(--press)}
+.pset{position:fixed;z-index:8;right:max(12px,env(safe-area-inset-right,0px));top:calc(104px + env(safe-area-inset-top,0px));width:min(270px,72vw);
+  padding:2px 12px 12px;border-radius:18px;border:1px solid var(--brand);background:color-mix(in srgb,var(--bg) 30%,transparent);
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);text-shadow:0 0 6px var(--bg),0 0 2px var(--bg);touch-action:pan-y;
+  transform:translateX(calc(100% + 24px));opacity:0;visibility:hidden;transition:transform .2s cubic-bezier(.2,.8,.2,1),opacity .2s,visibility 0s .2s}
+.pset.open{transform:none;opacity:1;visibility:visible;transition:transform .2s cubic-bezier(.2,.8,.2,1),opacity .2s}
+.pset.left{transform:translateX(calc(-100vw))}
+.pset .label{margin:10px 0 5px;font-size:.72rem;color:var(--ink)}
+.pset .seg,.pset .steps{background:color-mix(in srgb,var(--raise) 45%,transparent);padding:3px}
+.pset .seg button{font-size:.78rem;padding:7px 0;white-space:nowrap}
+.pset .steps button{padding:6px 0 4px;font-size:.85rem}
+.pset .seg-desc{display:none}
+.pset .vol output{font-size:.85rem}
+@media (prefers-reduced-motion:reduce){.pset,.pset.open{transition:none}}
 .transport{display:flex;gap:18px;margin-top:6px;justify-content:center;align-items:center}
 .transport button{display:flex;align-items:center;justify-content:center;border-radius:50%}
 .transport .go{width:46px;height:46px;background:var(--brand);color:var(--on-brand)}
@@ -208,7 +225,8 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <span id="prEmptyText"></span>
     </div>
     <div id="prBody" hidden>
-      <h1 class="pr-title" id="prTitle"></h1>
+      <div class="pr-head"><h1 class="pr-title" id="prTitle"></h1>
+        <button type="button" id="setBtn" class="gear" aria-label="소리 설정" aria-expanded="false" aria-controls="prSet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></svg></button></div>
       <div class="lane">
         <canvas id="prCanvas"></canvas>
         <div class="verdict" id="prVerdict">대기</div>
@@ -225,15 +243,6 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       </div>
       <h2 class="label" id="prCardsLabel">묶음별 연습</h2>
       <div class="pcards" id="prCards"></div>
-      <h2 class="label" id="oLabel">원곡 소리 크기</h2>
-      <div class="vol"><input id="oVol" type="range" min="50" max="300" step="10" value="100" aria-labelledby="oLabel"><output id="oOut">100%</output></div>
-      <p class="seg-desc">골전도 이어폰처럼 소리가 작게 들릴 때 100%보다 키울 수 있습니다.</p>
-      <h2 class="label" id="gLabel">화음 멜로디 소리</h2>
-      <div class="steps" id="gSteps" role="radiogroup" aria-labelledby="gLabel"></div>
-      <p class="seg-desc" id="gDesc"></p>
-      <h2 class="label" id="tLabel">화음 멜로디 음색</h2>
-      <div class="seg" id="tSeg" role="radiogroup" aria-labelledby="tLabel"></div>
-      <p class="seg-desc" id="tDesc"></p>
       <p class="note" id="prNote"></p>
     </div>
   </section>
@@ -250,6 +259,19 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
        Nothing is scripted or forwarded, which is the form every browser and in-app view accepts. -->
   <input id="picker" class="sr-file" type="file" accept=".mp3,.json,audio/mpeg,audio/mp3,application/json" multiple aria-label="곡 추가: mp3 파일이나 화음 데이터 파일 고르기">
 </label>
+
+<!-- Sound settings float over the practice screen and stop nothing: the song keeps playing while
+     the loudness and the guide are adjusted by ear. -->
+<aside class="pset" id="prSet" aria-label="소리 설정" inert>
+  <h2 class="label" id="oLabel">원곡 소리 크기</h2>
+  <div class="vol"><input id="oVol" type="range" min="50" max="300" step="10" value="100" aria-labelledby="oLabel"><output id="oOut">100%</output></div>
+  <h2 class="label" id="gLabel">화음 멜로디 소리</h2>
+  <div class="steps" id="gSteps" role="radiogroup" aria-labelledby="gLabel"></div>
+  <p class="seg-desc" id="gDesc"></p>
+  <h2 class="label" id="tLabel">화음 멜로디 음색</h2>
+  <div class="seg" id="tSeg" role="radiogroup" aria-labelledby="tLabel"></div>
+  <p class="seg-desc" id="tDesc"></p>
+</aside>
 
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -568,7 +590,7 @@ function renderEditor(bs){
 function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } harmUrl=null; harm.removeAttribute("src") }
 function show(name){
   if(name!=="edit") stopPlay();
-  if(name!=="practice") prRelease();
+  if(name!=="practice"){ prRelease(); setOpen(false) }
   $("screen-library").hidden=name!=="library"; $("screen-edit").hidden=name!=="edit"; $("screen-soon").hidden=name!=="soon"; $("screen-practice").hidden=name!=="practice";
   $("addBtn").hidden=name!=="library"; $("picker").disabled=name!=="library";
   $("editBtn").hidden=name!=="library"||!(songs.length||!exampleHidden);
@@ -978,6 +1000,16 @@ function prDraw(){
   for(const q of pr.trace){ const x=x0+(q.t-t)*pps; if(x<0||x>w) continue; g2.fillStyle=q.ok===null?C("muted"):q.ok?C("ink"):C("danger"); g2.beginPath(); g2.arc(x,y(q.p),2.4*dpr,0,6.3); g2.fill() }
   g2.strokeStyle=C("ink"); g2.globalAlpha=.9; g2.lineWidth=2*dpr; g2.beginPath(); g2.moveTo(x0,top-8*dpr); g2.lineTo(x0,h); g2.stroke(); g2.globalAlpha=1;
 }
+// ---- the settings panel: in from the right on the button, out on the button or on a sideways flick
+function setOpen(on,left){ const p=$("prSet"); p.classList.toggle("left",!on&&!!left); p.classList.toggle("open",on); p.style.transform=""; p.inert=!on; $("setBtn").setAttribute("aria-expanded",on);
+  if(!on&&left) setTimeout(()=>{ if(!p.classList.contains("open")) p.classList.remove("left") },260) }
+$("setBtn").onclick=()=>setOpen(!$("prSet").classList.contains("open"));
+{ const p=$("prSet"); let x0=0,y0=0,dx=0,drag=false,live=false;
+  p.addEventListener("touchstart",e=>{ live=!e.target.closest("input"); const q=e.touches[0]; x0=q.clientX; y0=q.clientY; dx=0; drag=false },{passive:true});   // a slider keeps its own drag
+  p.addEventListener("touchmove",e=>{ if(!live) return; const q=e.touches[0]; dx=q.clientX-x0;
+    if(!drag&&Math.abs(dx)>12&&Math.abs(dx)>1.5*Math.abs(q.clientY-y0)){ drag=true; p.style.transition="none" } if(drag) p.style.transform=`translateX(${dx}px)` },{passive:true});
+  const end=()=>{ if(!drag) return; drag=false; p.style.transition=""; if(Math.abs(dx)>50) setOpen(false,dx<0); else p.style.transform="" };
+  p.addEventListener("touchend",end); p.addEventListener("touchcancel",end) }
 $("oVol").oninput=e=>{ oLevel=+e.target.value; pref("ovol",oLevel); origApply() };
 $("prPlay").onclick=()=>pr.on?prStop():prStart();
 $("prBack").onclick=()=>prSeekTo(prTime()-10); $("prFwd").onclick=()=>prSeekTo(prTime()+10);
