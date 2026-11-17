@@ -757,6 +757,8 @@ function prRenderCards(){
     mark.onclick=()=>{ s.completed[i]=!s.completed[i]; if(!s.completed[i]&&pr.mixing===i) prMixStop(); dbPut(s); prUpdateCards() };
     const mix=document.createElement("button"); mix.type="button"; mix.className="mix"; mix.onclick=()=>prMix(i);
     acts.append(go,mark,mix); const hint=document.createElement("p"); hint.className="hint";
+    // a tap on the card itself (not on its buttons) brings the score to where this bundle begins
+    card.onclick=e=>{ if(e.target.closest("button")) return; prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); document.querySelector("main").scrollTo({top:0,behavior:"smooth"}) };
     card.append(top,line,acts,hint); box.append(card); pr.cards.push({i,card,acc,mark,mix,hint}) });
   if(!pr.cards.length){ const p=document.createElement("p"); p.className="seg-desc"; p.textContent="화음으로 고른 묶음이 없습니다. ‘소절 편집’에서 묶음을 화음 열로 옮겨 주세요."; box.append(p) }
   prUpdateCards();
@@ -848,7 +850,8 @@ async function openPractice(){
     const inHarm=bs.length?s.parts[bi]===0:true, mode=bs.length?s.modes[bi]:s.style;
     return {t,d,m,h:inHarm?(data[mode]||[])[i]||0:0} });
   if(pr.song!==s){ pr.takes={}; prMixStop(); prStop(); if(pr.url){ try{URL.revokeObjectURL(pr.url)}catch(e){} } pr.url=URL.createObjectURL(s.blob); pr.audio.src=pr.url; pr.trace=[]; pr.tA=0 }
-  pr.song=s; pr.bundles=bs; pr.stat=pr.notes.map(()=>({n:0,sung:0,hit:0}));
+  const same=pr.song===s&&pr.stat&&pr.stat.length===pr.notes.length;        // coming back to the tab keeps the marks
+  pr.song=s; pr.bundles=bs; if(!same) pr.stat=pr.notes.map(()=>({n:0,sung:0,hit:0}));
   const ps=pr.notes.flatMap(n=>n.h?[n.m,n.h]:[n.m]); pr.lo=Math.min(...ps)-3; pr.hi=Math.max(...ps)+3;
   $("prEmpty").hidden=true; $("prBody").hidden=false; $("prTitle").textContent=s.title;
   const last=pr.notes[pr.notes.length-1]; $("prSeek").max=Math.ceil(last.t+last.d+2); $("prEnd").textContent=mmss(+$("prSeek").max);
@@ -879,7 +882,7 @@ async function prStart(){
       src.connect(pr.proc); pr.proc.connect(mute); mute.connect(pr.ctx.destination); pr.proc.onaudioprocess=prRecord }
     catch(e){ micFail("error") } }
   try{ await pr.audio.play() }catch(e){ toast("재생을 시작하지 못했습니다"); return }
-  pr.on=true; pr.tA=pr.audio.currentTime; pr.tP=performance.now(); prPlayIcon(true);
+  pr.on=true; pr.pass=(pr.pass||0)+1; pr.wipe=null; pr.tA=pr.audio.currentTime; pr.tP=performance.now(); prPlayIcon(true);
   try{ navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{}) }catch(e){}
   guideStart(); cancelAnimationFrame(pr.raf); pr.raf=requestAnimationFrame(prTick);
 }
@@ -888,8 +891,8 @@ function prRelease(){ prMixStop(); prStop(); if(pr.proc){ try{ pr.proc.disconnec
   if(pr.native){ try{ Android.micStop() }catch(e){} pr.native=false; pr.an=null }
   if(pr.stream){ for(const t of pr.stream.getTracks()) t.stop(); pr.stream=null; pr.an=null } }
 function prSeekTo(t){ t=Math.max(0,Math.min(+$("prSeek").max,t)); try{ pr.audio.currentTime=t }catch(e){} pr.tA=t; pr.tP=performance.now(); pr.cur=0; lag.raw=[]; pr.recent=[];
-  // what was sung from here on is about to be sung again: clear its dots and its marks
-  pr.trace=pr.trace.filter(q=>q.t<t-0.5); pr.notes.forEach((n,i)=>{ if(n.t+n.d>t){ const st=pr.stat[i]; st.n=0; st.sung=0; st.hit=0 } });
+  // What was sung before stays on the score.  A new pass replaces it only where it is sung again.
+  pr.pass=(pr.pass||0)+1; pr.wipe=null;
   $("prSeek").value=t; if(pr.on) guideStart(); prUpdateStats(); prDraw() }
 function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) pr.cur=0;
   while(pr.cur<ns.length&&ns[pr.cur].t+ns[pr.cur].d<t) pr.cur++;
@@ -907,17 +910,20 @@ function prTick(){
     if(t>lag.next){ lag.next=t+2.5; lagEstimate(t) }
     const v=pr.recent.map(x=>x[1]).filter(x=>!isNaN(x)).sort((a,b)=>a-b); m=v.length>=2?v[v.length>>1]:NaN }
   else if(stale){ pr.recent.length=0; mic.hz=0 }
+  // this stretch is being sung again: the earlier pass gives way here, dot by dot and note by note
+  if(pr.wipe===null||tj<pr.wipe) pr.wipe=tj;
+  if(tj>pr.wipe){ const a=pr.wipe; pr.wipe=tj; if(pr.trace.some(q=>q.g!==pr.pass&&q.t>a&&q.t<=tj)) pr.trace=pr.trace.filter(q=>q.g===pr.pass||q.t<=a||q.t>tj) }
   const i=prTarget(tj), n=i>=0?pr.notes[i]:null; let text="", cls="verdict";
-  if(n&&n.h){ const st=pr.stat[i]; st.n++;
+  if(n&&n.h){ const st=pr.stat[i]; if(st.g!==pr.pass){ st.g=pr.pass; st.n=0; st.sung=0; st.hit=0 } st.n++;
     if(!isNaN(m)){ let diff=m-n.h; diff-=12*Math.round(diff/12); let ok=Math.abs(diff)<=TOL;
       if(!ok){ const nb=tj-n.t<EDGE_S?pr.notes[i-1]:(n.t+n.d-tj<EDGE_S?pr.notes[i+1]:null);
         if(nb&&nb.h){ let d2=m-nb.h; d2-=12*Math.round(d2/12); ok=Math.abs(d2)<=TOL } }
-      st.sung++; if(ok) st.hit++; pr.trace.push({t:tj,p:n.h+diff,ok});
+      st.sung++; if(ok) st.hit++; pr.trace.push({t:tj,p:n.h+diff,ok,g:pr.pass});
       text=ok?"맞아요":(diff>0?"높아요":"낮아요"); cls+=ok?" ok":" bad" }
     else text="화음 차례" }
-  else { if(!isNaN(m)){ const ref=n?n.m:(pr.notes[Math.max(0,pr.cur-1)]||{m:60}).m; pr.trace.push({t:tj,p:m-12*Math.round((m-ref)/12),ok:null}) }
+  else { if(!isNaN(m)){ const ref=n?n.m:(pr.notes[Math.max(0,pr.cur-1)]||{m:60}).m; pr.trace.push({t:tj,p:m-12*Math.round((m-ref)/12),ok:null,g:pr.pass}) }
     text=n?"솔로 구간":"쉬는 구간" }
-  if(pr.trace.length>4000) pr.trace.splice(0,1000);
+  if(pr.trace.length>40000) pr.trace.splice(0,5000);
   $("prVerdict").textContent=text; $("prVerdict").className=cls;
   if((prN++&7)===0){ $("prSeek").value=t; prUpdateStats() }
   prDraw(); pr.raf=requestAnimationFrame(prTick);
@@ -934,9 +940,9 @@ function prDraw(){
   pr.notes.forEach((n,i)=>{ const xa=x0+(n.t-t)*pps, xb=x0+(n.t+n.d-t)*pps; if(xb<0||xa>w) return;
     g2.fillStyle=C("muted"); g2.globalAlpha=.42; bar(xa,xb,n.m,nh*0.55); g2.globalAlpha=1;       // melody: thin, grey
     if(n.h){ const st=pr.stat[i]; g2.fillStyle=C("brand");                                        // harmony to sing: bold, gold
-      if(st.n>3&&n.t+n.d<t) g2.fillStyle=st.sung>=st.n*0.3&&st.hit>=st.sung*0.6?C("ok"):C("danger");
+      if(st.n>3&&(n.t+n.d<t||st.g!==pr.pass)) g2.fillStyle=st.sung>=st.n*0.3&&st.hit>=st.sung*0.6?C("ok"):C("danger");
       bar(xa,xb,n.h,nh) } });
-  for(const q of pr.trace){ const x=x0+(q.t-t)*pps; if(x<0||x>x0+2) continue; g2.fillStyle=q.ok===null?C("muted"):q.ok?C("ink"):C("danger"); g2.beginPath(); g2.arc(x,y(q.p),2.4*dpr,0,6.3); g2.fill() }
+  for(const q of pr.trace){ const x=x0+(q.t-t)*pps; if(x<0||x>w) continue; g2.fillStyle=q.ok===null?C("muted"):q.ok?C("ink"):C("danger"); g2.beginPath(); g2.arc(x,y(q.p),2.4*dpr,0,6.3); g2.fill() }
   g2.strokeStyle=C("ink"); g2.globalAlpha=.9; g2.lineWidth=2*dpr; g2.beginPath(); g2.moveTo(x0,top-8*dpr); g2.lineTo(x0,h); g2.stroke(); g2.globalAlpha=1;
 }
 $("oVol").oninput=e=>{ oLevel=+e.target.value; pref("ovol",oLevel); origApply() };
