@@ -863,7 +863,8 @@ function prPlaceCards(){
     if(!drag&&Math.abs(dx)>12&&Math.abs(dx)>1.5*Math.abs(p.clientY-y0)) drag=true; if(drag) card.style.transform=`translateX(${dx}px)` },{passive:true});
   const end=()=>{ if(!card) return; const c=card; card=null; if(!drag){ return } pr.swiped=performance.now();
     const k=pr.cards.findIndex(o=>o.card===c), to=pr.cards[k+(dx<0?1:-1)];
-    if(Math.abs(dx)>60&&to){ pr.slide=dx<0?"inR":"inL"; prMixStop(); prSeekTo(Math.max(0,pr.bundles[to.i].t[0]-1.5)) } else c.style.transform="" };
+    if(Math.abs(dx)>60&&to){ pr.slide=dx<0?"inR":"inL"; prMixStop(); prStop();      // arriving stopped: nothing is recorded over until asked
+      prSeekTo(Math.max(0,pr.bundles[to.i].t[0]-1.5)) } else c.style.transform="" };
   slot.addEventListener("touchend",end); slot.addEventListener("touchcancel",end) }
 document.querySelector("main").addEventListener("scroll",()=>{ if(!$("screen-practice").hidden&&pr.song) prPlaceCards() },{passive:true});
 // ---- lyrics in time.  The file's lyrics carry no times, so each bundle's lines are laid over the
