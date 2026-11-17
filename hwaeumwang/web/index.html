@@ -117,12 +117,19 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .pset .seg-desc{display:none}
 .pset .vol output{font-size:.85rem}
 @media (prefers-reduced-motion:reduce){.pset,.pset.open{transition:none}}
-.transport{display:flex;gap:18px;margin-top:6px;justify-content:center;align-items:center}
+.transport{display:flex;gap:12px;margin-top:6px;justify-content:center;align-items:center}
 .transport button{display:flex;align-items:center;justify-content:center;border-radius:50%}
 .transport .go{width:46px;height:46px;background:var(--brand);color:var(--on-brand)}
 .transport .go svg{width:20px;height:20px}
 .transport .mini{width:38px;height:38px;background:var(--raise);color:var(--ink)}
 .transport .mini svg{width:22px;height:22px}
+.transport .mini:disabled{opacity:.35}
+.transport .mini.act{background:var(--brand);color:var(--on-brand)}
+.pcard .lock{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--bg);flex:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.pcard .lock svg{width:18px;height:18px}
+.pcard .lock[aria-pressed="true"]{background:var(--ok);color:var(--bg)}
+.pcard .row{display:flex;align-items:center;gap:10px}
+.pcard .row .line{flex:1;min-width:0;margin:5px 0 0}
 .lyr{margin-top:8px;text-align:center;min-height:2.9em;line-height:1.3}
 .lyr b{display:block;font-size:1.02rem;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lyr b.harm{color:var(--brand)}
@@ -237,9 +244,11 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <input id="prSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="재생 위치">
       <div class="times"><span id="prNow">0:00</span><span id="prEnd">0:00</span></div>
       <div class="transport">
-        <button type="button" id="prBack" class="mini" aria-label="10초 뒤로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.2 3.6v3.6h3.6"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="currentColor" stroke="none">10</text></svg></button>
+        <button type="button" id="tRec" class="mini" aria-label="이 묶음 다시 녹음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.2 3.6v3.6h3.6"/><circle cx="12" cy="12" r="3" fill="var(--danger)" stroke="none"/></svg></button>
+        <button type="button" id="tMix" class="mini" aria-label="내 녹음 듣기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 14v-2a7.5 7.5 0 0 1 15 0v2"/><rect x="3.5" y="13.5" width="4" height="6.5" rx="1.6"/><rect x="16.5" y="13.5" width="4" height="6.5" rx="1.6"/></svg></button>
         <button type="button" id="prPlay" class="go" aria-label="시작"></button>
-        <button type="button" id="prFwd" class="mini" aria-label="10초 앞으로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.8 3.6v3.6h-3.6"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="currentColor" stroke="none">10</text></svg></button>
+        <button type="button" id="tVox" class="mini" aria-label="화음을 육성으로 듣기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.4"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0"/><path d="M17 6.5a4 4 0 0 1 0 5M19.6 4.2a7.4 7.4 0 0 1 0 9.6"/></svg></button>
+        <button type="button" id="tMel" class="mini" aria-label="화음을 멜로디 음으로 듣기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M9 5v14M15 5v14"/><path d="M7.4 5v7.5h3.2V5M13.4 5v7.5h3.2V5" fill="currentColor"/></svg></button>
       </div>
       <h2 class="label" id="prCardsLabel">묶음별 연습</h2>
       <div class="pcards" id="prCards"></div>
@@ -759,45 +768,47 @@ const pr={song:null,notes:[],audio:new Audio(),url:null,ctx:null,an:null,buf:nul
 // ---- per-bundle cards: jump there, mark it finished, then hear your own take over the original
 const bundleAt=t=>{ for(let i=pr.bundles.length-1;i>=0;i--){ const r=pr.bundles[i].t; if(r&&t>=r[0]&&t<r[1]) return i } return -1 };
 function prRecord(e){ prRecordSamples(e.inputBuffer.getChannelData(0),pr.ctx.sampleRate) }
+const lockedAt=t=>{ const i=bundleAt(t); return i>=0&&!!(pr.song.locked||[])[i] };
 function prRecordSamples(x,sr){                       // keep the latest take of each harmony bundle (mono, half rate)
   if(!pr.on||pr.mixing>=0) return;
   const t=prTime()-x.length/sr-(pr.native?0.05:0), i=bundleAt(t);
-  if(i<0||pr.song.parts[i]!==0) return;
+  if(i<0||pr.song.parts[i]!==0||pr.song.locked[i]) return;
   let tk=pr.takes[i]; if(!tk||Math.abs(t-tk.end)>0.5) tk=pr.takes[i]={t0:t,end:t,chunks:[],sr:sr/2};      // a jump starts a new take
   const out=new Int16Array(x.length>>1); for(let k=0;k<out.length;k++) out[k]=Math.max(-1,Math.min(1,(x[2*k]+x[2*k+1])*0.5))*32767;
   tk.chunks.push(out); tk.end=t+x.length/sr;
 }
 function prRenderCards(){
   const s=pr.song, box=$("prCards"); box.textContent=""; box.hidden=false; $("prNowSlot").textContent=""; $("prNowSlot").style.minHeight=""; pr.cards=[];
-  if(!Array.isArray(s.completed)||s.completed.length!==pr.bundles.length) s.completed=pr.bundles.map(()=>false);
+  if(!Array.isArray(s.locked)||s.locked.length!==pr.bundles.length) s.locked=pr.bundles.map(()=>false);
+  const OPEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8.5 11V7.5a3.5 3.5 0 0 1 6.8-1.2"/></svg>',
+        SHUT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.2"/><path d="M8.5 11V7.5a3.5 3.5 0 0 1 7 0V11"/></svg>';
   pr.bundles.forEach((b,i)=>{ if(s.parts[i]!==0||!b.t) return;
     const card=document.createElement("div"); card.className="pcard";
     const top=document.createElement("div"); top.className="top"; const sm=document.createElement("small"), acc=document.createElement("b");
     sm.textContent=`${b.from}~${b.to}번째 줄 · ${mmss(b.t[0])} · ${STYLE_NAME[s.modes[i]]||""}`; top.append(sm,acc);
+    const row=document.createElement("div"); row.className="row";
     const line=document.createElement("div"); line.className="line"; line.textContent=b.lines[0]||"";
-    const acts=document.createElement("div"); acts.className="acts";
-    const mk=cls=>{ const x=document.createElement("button"); x.type="button"; if(cls) x.className=cls; return x };
-    const go=mk(); go.onclick=()=>{ prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); if(!pr.on) prStart() };
-    const mix=mk("mix"); mix.onclick=()=>prMix(i);
-    const lv=mk(), lm=mk(); lv.onclick=()=>prListen(i,"voice"); lm.onclick=()=>prListen(i,"mel");
-    const mark=mk("mark"); mark.onclick=()=>{ s.completed[i]=!s.completed[i]; dbPut(s); prUpdateCards() };
-    acts.append(go,mix,lv,lm,mark);
+    // the lock keeps this bundle's recording as it is: a tap locks, a long press unlocks
+    const lock=document.createElement("button"); lock.type="button"; lock.className="lock"; let hold=0, held=false;
+    const set=on=>{ s.locked[i]=on; dbPut(s); prUpdateCards() };
+    lock.onpointerdown=()=>{ held=false; clearTimeout(hold); if(s.locked[i]) hold=setTimeout(()=>{ held=true; set(false); try{ navigator.vibrate&&navigator.vibrate(30) }catch(e){} },550) };
+    lock.onpointerup=lock.onpointerleave=lock.onpointercancel=()=>clearTimeout(hold);
+    lock.oncontextmenu=e=>e.preventDefault();
+    lock.onclick=()=>{ if(held){ held=false; return } if(!s.locked[i]) set(true); else toast("꾹 누르면 잠금이 풀립니다") };
+    row.append(line,lock);
     // a tap on the card itself (not on its buttons) brings the score to where this bundle begins
     card.onclick=e=>{ if(e.target.closest("button")||performance.now()-(pr.swiped||0)<400) return; prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); document.querySelector("main").scrollTo({top:0,behavior:"smooth"}) };
-    card.append(top,line,acts); box.append(card); pr.cards.push({i,card,acc,mark,mix,go,lv,lm}) });
+    card.append(top,row); box.append(card); pr.cards.push({i,card,acc,lock,OPEN,SHUT}) });
   if(!pr.cards.length){ const p=document.createElement("p"); p.className="seg-desc"; p.textContent="화음으로 고른 묶음이 없습니다. ‘소절 편집’에서 묶음을 화음 열로 옮겨 주세요."; box.append(p) }
   prUpdateCards();
 }
 function prUpdateCards(){
   const s=pr.song; if(!s) return; const tNow=prTime();
-  for(const c of pr.cards){ const b=pr.bundles[c.i], tk=pr.takes[c.i], has=!!tk&&tk.end-tk.t0>=3, done=!!s.completed[c.i];
+  for(const c of pr.cards){ const b=pr.bundles[c.i], done=!!s.locked[c.i];
     let sung=0,hit=0; pr.notes.forEach((n,k)=>{ if(n.t>=b.t[0]&&n.t<b.t[1]){ sung+=pr.stat[k].sung; hit+=pr.stat[k].hit } });
     c.acc.textContent=sung>15?Math.round(100*hit/sung)+"%":"";
     c.card.className="pcard"+(done?" fin":"")+(pr.on&&bundleAt(tNow)===c.i?" now":"");
-    c.mark.textContent=done?"✓ 완성":"완성"; c.mark.setAttribute("aria-pressed",done); c.mark.disabled=!done&&!has;
-    c.go.textContent=has?"재녹음":"여기부터 연습";
-    c.mix.disabled=!has; c.mix.textContent=pr.mixing===c.i?"■ 멈춤":"내 녹음 듣기";
-    const L=pr.listen&&pr.listen.i===c.i?pr.listen.kind:""; c.lv.textContent=L==="voice"?"■ 멈춤":"육성 듣기"; c.lm.textContent=L==="mel"?"■ 멈춤":"멜로디 듣기" }
+    if(c.lock.dataset.on!==String(done)){ c.lock.dataset.on=done; c.lock.innerHTML=done?c.SHUT:c.OPEN; c.lock.setAttribute("aria-pressed",done); c.lock.setAttribute("aria-label",done?"잠김 (꾹 눌러 풀기)":"이 묶음 녹음 잠그기") } }
   prPlaceCards();
 }
 async function prMix(i){                              // play the take over the original, from where the take began
@@ -842,12 +853,12 @@ prPlayIcon(false);
 // The card of the bundle being practised sits right under the score while the page is at the top.
 // Once the page is scrolled it goes back to its own place in the list, so the list reads in order.
 function prPlaceCards(){
-  const slot=$("prNowSlot"), box=$("prCards"), t=prTime(); if(!pr.cards.length){ slot.textContent=""; return }
+  const slot=$("prNowSlot"), box=$("prCards"), t=prTime(); if(!pr.cards.length){ slot.textContent=""; pr.curCard=null; for(const id of ["tRec","tMix","tVox","tMel"]) $(id).disabled=true; return }
   // the card of the bundle that has begun (or begins within the lead-in a jump leaves before it);
   // once that bundle is over, the next one to come
   let k=-1; pr.cards.forEach((c,j)=>{ if(t>=pr.bundles[c.i].t[0]-1.6) k=j }); if(k<0) k=0;
   if(t>=pr.bundles[pr.cards[k].i].t[1]&&k+1<pr.cards.length) k++;
-  let cur=pr.cards[k];
+  let cur=pr.curCard=pr.cards[k];
   // the slot keeps its height while it is empty: the page must not shrink under the finger
   if(document.querySelector("main").scrollTop>24) cur=null; else slot.style.minHeight="";
   if(!cur&&slot.firstChild) slot.style.minHeight=slot.offsetHeight+"px";
@@ -856,6 +867,9 @@ function prPlaceCards(){
     if(want===slot){ slot.append(c.card); if(pr.slide){ c.card.classList.add(pr.slide); pr.slide="" } }
     else{ const nx=pr.cards.find(o=>o.i>c.i&&o.card.parentNode===box); box.insertBefore(c.card,nx?nx.card:null) } }
   $("prCardsLabel").hidden=box.hidden=!box.children.length;
+  const c=pr.curCard, tk=c&&pr.takes[c.i], has=!!tk&&tk.end-tk.t0>=3, L=c&&pr.listen&&pr.listen.i===c.i?pr.listen.kind:"";
+  $("tRec").disabled=!c||!!pr.song.locked[c.i]; $("tMix").disabled=!has; $("tVox").disabled=$("tMel").disabled=!c;
+  $("tMix").classList.toggle("act",!!c&&pr.mixing===c.i); $("tVox").classList.toggle("act",L==="voice"); $("tMel").classList.toggle("act",L==="mel");
 }
 { const slot=$("prNowSlot"); let x0=0,y0=0,dx=0,drag=false,card=null;
   slot.addEventListener("touchstart",e=>{ const p=e.touches[0]; x0=p.clientX; y0=p.clientY; dx=0; drag=false; card=slot.firstElementChild },{passive:true});
@@ -970,9 +984,10 @@ function prTick(){
   else if(stale){ pr.recent.length=0; mic.hz=0 }
   // this stretch is being sung again: the earlier pass gives way here, dot by dot and note by note
   if(pr.wipe===null||tj<pr.wipe) pr.wipe=tj;
-  if(tj>pr.wipe){ const a=pr.wipe; pr.wipe=tj; if(pr.trace.some(q=>q.g!==pr.pass&&q.t>a&&q.t<=tj)) pr.trace=pr.trace.filter(q=>q.g===pr.pass||q.t<=a||q.t>tj) }
+  if(tj>pr.wipe){ const a=pr.wipe; pr.wipe=tj; if(pr.trace.some(q=>q.g!==pr.pass&&q.t>a&&q.t<=tj)) pr.trace=pr.trace.filter(q=>q.g===pr.pass||q.t<=a||q.t>tj||lockedAt(q.t)) }
   const i=prTarget(tj), n=i>=0?pr.notes[i]:null; let text="", cls="verdict";
-  if(n&&n.h){ const st=pr.stat[i]; if(st.g!==pr.pass){ st.g=pr.pass; st.n=0; st.sung=0; st.hit=0 } st.n++;
+  if(lockedAt(tj)) text="잠금";                                                     // kept as recorded: nothing is judged or drawn over it
+  else if(n&&n.h){ const st=pr.stat[i]; if(st.g!==pr.pass){ st.g=pr.pass; st.n=0; st.sung=0; st.hit=0 } st.n++;
     if(!isNaN(m)){ let diff=m-n.h; diff-=12*Math.round(diff/12); let ok=Math.abs(diff)<=TOL;
       if(!ok){ const nb=tj-n.t<EDGE_S?pr.notes[i-1]:(n.t+n.d-tj<EDGE_S?pr.notes[i+1]:null);
         if(nb&&nb.h){ let d2=m-nb.h; d2-=12*Math.round(d2/12); ok=Math.abs(d2)<=TOL } }
@@ -1015,7 +1030,10 @@ $("setBtn").onclick=()=>setOpen(!$("prSet").classList.contains("open"));
   p.addEventListener("touchend",end); p.addEventListener("touchcancel",end) }
 $("oVol").oninput=e=>{ oLevel=+e.target.value; pref("ovol",oLevel); origApply() };
 $("prPlay").onclick=()=>pr.on?prStop():prStart();
-$("prBack").onclick=()=>prSeekTo(prTime()-10); $("prFwd").onclick=()=>prSeekTo(prTime()+10);
+// the buttons beside play act on the bundle whose card is the current one
+$("tRec").onclick=()=>{ const c=pr.curCard; if(!c||pr.song.locked[c.i]) return; prMixStop(); prStop(); prSeekTo(Math.max(0,pr.bundles[c.i].t[0]-1.5)); prStart() };
+$("tMix").onclick=()=>{ if(pr.curCard) prMix(pr.curCard.i) };
+$("tVox").onclick=()=>{ if(pr.curCard) prListen(pr.curCard.i,"voice") }; $("tMel").onclick=()=>{ if(pr.curCard) prListen(pr.curCard.i,"mel") };
 $("prSeek").oninput=e=>prSeekTo(+e.target.value);
 addEventListener("resize",()=>{ if(!$("screen-practice").hidden) prDraw() });
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) prStop() });
