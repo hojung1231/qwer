@@ -106,6 +106,10 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .transport .go svg{width:20px;height:20px}
 .transport .mini{width:38px;height:38px;background:var(--raise);color:var(--ink)}
 .transport .mini svg{width:22px;height:22px}
+.lyr{margin-top:8px;text-align:center;min-height:2.9em;line-height:1.3}
+.lyr b{display:block;font-size:1.02rem;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lyr b.harm{color:var(--brand)}
+.lyr span{display:block;color:var(--muted);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #prNowSlot{margin-top:8px}
 #prNowSlot:empty{margin:0}
 .pcards{display:flex;flex-direction:column;gap:10px}
@@ -208,6 +212,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
         <div class="verdict" id="prVerdict">대기</div>
         <div class="score"><b id="prAcc">–</b><span>음정 일치</span></div>
       </div>
+      <div class="lyr" id="prLyr" aria-live="off"><b id="prLyrNow"></b><span id="prLyrNext"></span></div>
       <div id="prNowSlot"></div>
       <input id="prSeek" type="range" min="0" max="1" step="0.1" value="0" aria-label="재생 위치">
       <div class="times"><span id="prNow">0:00</span><span id="prEnd">0:00</span></div>
@@ -802,6 +807,29 @@ function prPlaceCards(){
   $("prCardsLabel").hidden=box.hidden=!box.children.length;
 }
 document.querySelector("main").addEventListener("scroll",()=>{ if(!$("screen-practice").hidden&&pr.song) prPlaceCards() },{passive:true});
+// ---- lyrics in time.  The file's lyrics carry no times, so each bundle's lines are laid over the
+// melody notes sung in that bundle: notes are shared out by syllable count, and each line break is
+// moved to the longest pause near it (singers breathe between lines).
+function prLyricTimes(){
+  const out=[]; for(const [bi,b] of pr.bundles.entries()){ if(!b.t||!b.lines.length) continue;
+    const ns=pr.notes.filter(n=>n.t>=b.t[0]-0.3&&n.t<b.t[1]), syl=b.lines.map(l=>Math.max(1,(l.match(/[가-힣]|[A-Za-z0-9]+/g)||[]).length)), tot=syl.reduce((a,c)=>a+c,0);
+    if(ns.length<b.lines.length){ b.lines.forEach((l,k)=>out.push({t:b.t[0]+(b.t[1]-b.t[0])*k/b.lines.length,text:l,bi})); continue }
+    // every way of placing the line breaks is tried (a bundle has few notes): long pauses win,
+    // and a break far from where the syllable count puts it pays for the distance
+    const K=b.lines.length, N=ns.length, want=[]; let acc=0; for(let k=1;k<K;k++){ acc+=syl[k-1]; want.push(acc/tot*N) }
+    const gap=j=>Math.min(3,Math.max(0,ns[j].t-(ns[j-1].t+ns[j-1].d))); let best=-1e9, pick=want.map(w=>Math.round(w));
+    const walk=(k,from,sc,cur)=>{ if(k===K-1){ if(sc>best){ best=sc; pick=cur.slice() } return }
+      for(let j=from;j<=N-(K-1-k);j++){ cur[k]=j; walk(k+1,j+1,sc+gap(j)-5*Math.abs(j-want[k])/N,cur) } };
+    if(K>1) walk(0,1,0,[]);
+    b.lines.forEach((l,k)=>out.push({t:k?ns[pick[k-1]].t:Math.min(b.t[0],ns[0].t),text:l,bi})) }
+  pr.lyr=out.sort((a,b)=>a.t-b.t); pr.lyrAt=-2;
+}
+function prLyricShow(){
+  const L=pr.lyr||[], t=prTime()+0.25; let i=-1; while(i+1<L.length&&L[i+1].t<=t) i++;
+  if(i===pr.lyrAt) return; pr.lyrAt=i; $("prLyr").hidden=!L.length;
+  const cur=L[i], nx=L[i+1]; $("prLyrNow").textContent=cur?cur.text:""; $("prLyrNext").textContent=nx?nx.text:"";
+  $("prLyrNow").className=cur&&pr.song.parts[cur.bi]===0?"harm":"";
+}
 const cv=$("prCanvas"), g2=cv.getContext("2d");
 function prEmpty(title,text){ $("prEmpty").hidden=false; $("prBody").hidden=true; $("prEmptyTitle").textContent=title; $("prEmptyText").textContent=text }
 async function openPractice(){
@@ -825,7 +853,7 @@ async function openPractice(){
   $("prEmpty").hidden=true; $("prBody").hidden=false; $("prTitle").textContent=s.title;
   const last=pr.notes[pr.notes.length-1]; $("prSeek").max=Math.ceil(last.t+last.d+2); $("prEnd").textContent=mmss(+$("prSeek").max);
   $("prNote").textContent="이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 원곡 소리를 주워 판정이 흐려집니다.";
-  prRenderCards(); renderGuide(); renderTone(); origApply(); prUpdateStats(); prDraw();
+  prLyricTimes(); prLyricShow(); prRenderCards(); renderGuide(); renderTone(); origApply(); prUpdateStats(); prDraw();
 }
 const prTime=()=>pr.on?pr.tA+(performance.now()-pr.tP)/1000:pr.audio.currentTime||0;
 pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.mixing>=0&&pr.audio.currentTime>=pr.mixEnd) prMixStop() };
@@ -895,7 +923,7 @@ function prTick(){
   prDraw(); pr.raf=requestAnimationFrame(prTick);
 }
 function prUpdateStats(){ let sung=0,hit=0; for(const s of pr.stat||[]){ sung+=s.sung; hit+=s.hit }
-  $("prAcc").textContent=sung>20?Math.round(100*hit/sung)+"%":"–"; $("prNow").textContent=mmss(prTime()); prUpdateCards() }
+  $("prAcc").textContent=sung>20?Math.round(100*hit/sung)+"%":"–"; $("prNow").textContent=mmss(prTime()); prLyricShow(); prUpdateCards() }
 function prDraw(){
   const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1, w=Math.round(r.width*dpr), h=Math.round(r.height*dpr);
   if(!w||!h) return; if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h }
