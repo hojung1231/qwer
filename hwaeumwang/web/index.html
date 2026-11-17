@@ -814,6 +814,8 @@ async function prMix(i){                              // play the take over the 
   catch(e){ if(pr.mixSrc===src){ prMixStop(); toast("재생을 시작하지 못했습니다") } return }
   if(pr.mixSrc!==src) return;
   src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
+  // the score follows the playback, as it does while practising
+  const loop=()=>{ if(pr.mixSrc!==src) return; $("prSeek").value=prTime(); $("prNow").textContent=mmss(prTime()); prLyricShow(); prDraw(); requestAnimationFrame(loop) }; loop();
 }
 // hear how one bundle's harmony goes: the original with the sung harmony, or with the synth line
 async function prListen(i,kind){
