@@ -110,7 +110,9 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .lyr b{display:block;font-size:1.02rem;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lyr b.harm{color:var(--brand)}
 .lyr span{display:block;color:var(--muted);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#prNowSlot{margin-top:8px}
+#prNowSlot{margin-top:8px;overflow:hidden;touch-action:pan-y;border-radius:18px}
+@keyframes inR{from{transform:translateX(105%)}to{transform:none}} @keyframes inL{from{transform:translateX(-105%)}to{transform:none}}
+.pcard.inR{animation:inR .22s ease} .pcard.inL{animation:inL .22s ease}
 #prNowSlot:empty{margin:0}
 .pcards{display:flex;flex-direction:column;gap:10px}
 .pcard{background:var(--raise);border:1.5px solid transparent;border-radius:18px;padding:14px 15px}
@@ -121,7 +123,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .pcard .top b{font-size:1.05rem;font-weight:900;font-variant-numeric:tabular-nums}
 .pcard .line{font-size:.92rem;font-weight:700;margin:5px 0 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pcard .acts{display:flex;gap:7px;flex-wrap:wrap}
-.pcard .acts button{height:36px;padding:0 13px;border-radius:999px;font-size:.82rem;font-weight:700;background:var(--bg);white-space:nowrap}
+.pcard .acts button{height:34px;padding:0 12px;border-radius:999px;font-size:.82rem;font-weight:700;background:var(--bg);white-space:nowrap}
 .pcard .acts button:disabled{opacity:.4;cursor:default}
 .pcard .acts .mark[aria-pressed="true"]{background:var(--ok);color:var(--bg)}
 .pcard .acts .mix{background:var(--brand);color:var(--on-brand)}
@@ -752,14 +754,15 @@ function prRenderCards(){
     sm.textContent=`${b.from}~${b.to}번째 줄 · ${mmss(b.t[0])} · ${STYLE_NAME[s.modes[i]]||""}`; top.append(sm,acc);
     const line=document.createElement("div"); line.className="line"; line.textContent=b.lines[0]||"";
     const acts=document.createElement("div"); acts.className="acts";
-    const go=document.createElement("button"); go.type="button"; go.textContent="여기부터 연습"; go.onclick=()=>{ prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); if(!pr.on) prStart() };
-    const mark=document.createElement("button"); mark.type="button"; mark.className="mark";
-    mark.onclick=()=>{ s.completed[i]=!s.completed[i]; if(!s.completed[i]&&pr.mixing===i) prMixStop(); dbPut(s); prUpdateCards() };
-    const mix=document.createElement("button"); mix.type="button"; mix.className="mix"; mix.onclick=()=>prMix(i);
-    acts.append(go,mark,mix); const hint=document.createElement("p"); hint.className="hint";
+    const mk=cls=>{ const x=document.createElement("button"); x.type="button"; if(cls) x.className=cls; return x };
+    const go=mk(); go.onclick=()=>{ prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); if(!pr.on) prStart() };
+    const mix=mk("mix"); mix.onclick=()=>prMix(i);
+    const lv=mk(), lm=mk(); lv.onclick=()=>prListen(i,"voice"); lm.onclick=()=>prListen(i,"mel");
+    const mark=mk("mark"); mark.onclick=()=>{ s.completed[i]=!s.completed[i]; dbPut(s); prUpdateCards() };
+    acts.append(go,mix,lv,lm,mark);
     // a tap on the card itself (not on its buttons) brings the score to where this bundle begins
-    card.onclick=e=>{ if(e.target.closest("button")) return; prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); document.querySelector("main").scrollTo({top:0,behavior:"smooth"}) };
-    card.append(top,line,acts,hint); box.append(card); pr.cards.push({i,card,acc,mark,mix,hint}) });
+    card.onclick=e=>{ if(e.target.closest("button")||performance.now()-(pr.swiped||0)<400) return; prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); document.querySelector("main").scrollTo({top:0,behavior:"smooth"}) };
+    card.append(top,line,acts); box.append(card); pr.cards.push({i,card,acc,mark,mix,go,lv,lm}) });
   if(!pr.cards.length){ const p=document.createElement("p"); p.className="seg-desc"; p.textContent="화음으로 고른 묶음이 없습니다. ‘소절 편집’에서 묶음을 화음 열로 옮겨 주세요."; box.append(p) }
   prUpdateCards();
 }
@@ -770,9 +773,9 @@ function prUpdateCards(){
     c.acc.textContent=sung>15?Math.round(100*hit/sung)+"%":"";
     c.card.className="pcard"+(done?" fin":"")+(pr.on&&bundleAt(tNow)===c.i?" now":"");
     c.mark.textContent=done?"✓ 완성":"완성"; c.mark.setAttribute("aria-pressed",done); c.mark.disabled=!done&&!has;
-    c.mix.hidden=!done; c.mix.disabled=!has; c.mix.textContent=pr.mixing===c.i?"■ 멈춤":"▶ 내 목소리 + 원곡";
-    c.hint.textContent=done?(has?"":"녹음은 페이지를 닫으면 사라집니다. 이 묶음을 다시 부르면 들을 수 있어요."):(has?"다 불렀으면 ‘완성’을 눌러 주세요.":"이 묶음을 끝까지 부르면 ‘완성’을 누를 수 있어요.");
-    c.hint.hidden=!c.hint.textContent }
+    c.go.textContent=has?"재녹음":"여기부터 연습";
+    c.mix.disabled=!has; c.mix.textContent=pr.mixing===c.i?"■ 멈춤":"내 녹음 듣기";
+    const L=pr.listen&&pr.listen.i===c.i?pr.listen.kind:""; c.lv.textContent=L==="voice"?"■ 멈춤":"육성 듣기"; c.lm.textContent=L==="mel"?"■ 멈춤":"멜로디 듣기" }
   prPlaceCards();
 }
 async function prMix(i){                              // play the take over the original, from where the take began
@@ -790,7 +793,24 @@ async function prMix(i){                              // play the take over the 
   if(pr.mixSrc!==src) return;
   src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
 }
-function prMixStop(){ if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
+// hear how one bundle's harmony goes: the original with the sung harmony, or with the synth line
+async function prListen(i,kind){
+  const was=pr.listen&&pr.listen.i===i&&pr.listen.kind===kind; prMixStop(); prStop(); if(was) return;
+  const b=pr.bundles[i], s=pr.song, L=pr.listen={i,kind,end:b.t[1],out:null,v:null}; prUpdateCards();
+  try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") await pr.ctx.resume() }catch(e){ pr.ctx=null }
+  origRoute(); const t0=Math.max(0,b.t[0]-0.3);
+  if(kind==="voice"){ if(!(await voxLoad())){ if(pr.listen===L){ prListenStop(); toast("이 곡은 육성 화음이 아직 없습니다") } return } L.v=vox[s.modes[i]]||vox.up }
+  if(pr.listen!==L) return;
+  try{ pr.audio.currentTime=t0; if(L.v){ L.v.currentTime=t0; L.v.playbackRate=1; L.v.volume=0.8 } await pr.audio.play(); if(pr.listen!==L){ return } if(L.v) L.v.play().catch(()=>{}) }
+  catch(e){ if(pr.listen===L){ prListenStop(); toast("재생을 시작하지 못했습니다") } return }
+  if(kind==="mel"&&pr.ctx){ L.out=pr.ctx.createGain(); L.out.gain.value=0.45; L.out.connect(pr.ctx.destination); const now=pr.ctx.currentTime;
+    const save=tone; if(tone==="voice") tone="lead";
+    for(const n of pr.notes){ if(!n.h||n.t<b.t[0]-0.3||n.t>=b.t[1]) continue; voice(pr.ctx,L.out,440*Math.pow(2,(n.h-69)/12),now+Math.max(0,n.t-t0),now+Math.max(0.05,n.t+n.d-t0)) }
+    tone=save }
+  const loop=()=>{ if(pr.listen!==L) return; $("prSeek").value=prTime(); $("prNow").textContent=mmss(prTime()); prLyricShow(); prDraw(); requestAnimationFrame(loop) }; loop();
+}
+function prListenStop(){ const L=pr.listen; if(!L) return; pr.listen=null; pr.audio.pause(); if(L.v){ L.v.pause(); L.v.volume=0 } if(L.out){ try{ L.out.disconnect() }catch(e){} } prUpdateCards() }
+function prMixStop(){ prListenStop(); if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
 function prPlayIcon(on){ const b=$("prPlay"); b.setAttribute("aria-label",on?"정지":"시작");
   b.innerHTML=on?'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>'
                :'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8a.8.8 0 0 0-1.2.7z"/></svg>' }
@@ -799,15 +819,28 @@ prPlayIcon(false);
 // Once the page is scrolled it goes back to its own place in the list, so the list reads in order.
 function prPlaceCards(){
   const slot=$("prNowSlot"), box=$("prCards"), t=prTime(); if(!pr.cards.length){ slot.textContent=""; return }
-  let cur=pr.cards.find(c=>bundleAt(t)===c.i)||pr.cards.find(c=>pr.bundles[c.i].t[1]>t)||pr.cards[pr.cards.length-1];
+  // the card of the bundle that has begun (or begins within the lead-in a jump leaves before it);
+  // once that bundle is over, the next one to come
+  let k=-1; pr.cards.forEach((c,j)=>{ if(t>=pr.bundles[c.i].t[0]-1.6) k=j }); if(k<0) k=0;
+  if(t>=pr.bundles[pr.cards[k].i].t[1]&&k+1<pr.cards.length) k++;
+  let cur=pr.cards[k];
   // the slot keeps its height while it is empty: the page must not shrink under the finger
   if(document.querySelector("main").scrollTop>24) cur=null; else slot.style.minHeight="";
   if(!cur&&slot.firstChild) slot.style.minHeight=slot.offsetHeight+"px";
   for(const c of pr.cards){ const want=c===cur?slot:box; if(c.card.parentNode===want) continue;
-    if(want===slot) slot.append(c.card);
+    c.card.style.transform=""; c.card.classList.remove("inR","inL");
+    if(want===slot){ slot.append(c.card); if(pr.slide){ c.card.classList.add(pr.slide); pr.slide="" } }
     else{ const nx=pr.cards.find(o=>o.i>c.i&&o.card.parentNode===box); box.insertBefore(c.card,nx?nx.card:null) } }
   $("prCardsLabel").hidden=box.hidden=!box.children.length;
 }
+{ const slot=$("prNowSlot"); let x0=0,y0=0,dx=0,drag=false,card=null;
+  slot.addEventListener("touchstart",e=>{ const p=e.touches[0]; x0=p.clientX; y0=p.clientY; dx=0; drag=false; card=slot.firstElementChild },{passive:true});
+  slot.addEventListener("touchmove",e=>{ if(!card) return; const p=e.touches[0]; dx=p.clientX-x0;
+    if(!drag&&Math.abs(dx)>12&&Math.abs(dx)>1.5*Math.abs(p.clientY-y0)) drag=true; if(drag) card.style.transform=`translateX(${dx}px)` },{passive:true});
+  const end=()=>{ if(!card) return; const c=card; card=null; if(!drag){ return } pr.swiped=performance.now();
+    const k=pr.cards.findIndex(o=>o.card===c), to=pr.cards[k+(dx<0?1:-1)];
+    if(Math.abs(dx)>60&&to){ pr.slide=dx<0?"inR":"inL"; prMixStop(); prSeekTo(Math.max(0,pr.bundles[to.i].t[0]-1.5)) } else c.style.transform="" };
+  slot.addEventListener("touchend",end); slot.addEventListener("touchcancel",end) }
 document.querySelector("main").addEventListener("scroll",()=>{ if(!$("screen-practice").hidden&&pr.song) prPlaceCards() },{passive:true});
 // ---- lyrics in time.  The file's lyrics carry no times, so each bundle's lines are laid over the
 // melody notes sung in that bundle: notes are shared out by syllable count, and each line break is
@@ -859,7 +892,7 @@ async function openPractice(){
   prLyricTimes(); prLyricShow(); prRenderCards(); renderGuide(); renderTone(); origApply(); prUpdateStats(); prDraw();
 }
 const prTime=()=>pr.on?pr.tA+(performance.now()-pr.tP)/1000:pr.audio.currentTime||0;
-pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.mixing>=0&&pr.audio.currentTime>=pr.mixEnd) prMixStop() };
+pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.mixing>=0&&pr.audio.currentTime>=pr.mixEnd) prMixStop(); if(pr.listen&&pr.audio.currentTime>=pr.listen.end) prListenStop() };
 pr.audio.onended=()=>{ prMixStop(); prStop() };
 async function prStart(){
   if(pr.on||!pr.song) return;
