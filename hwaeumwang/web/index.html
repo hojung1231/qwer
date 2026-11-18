@@ -731,8 +731,9 @@ function detectPitch(x,sr,gate=0.008,thr=YIN_THR){
 // down.  The sung harmony goes up to four times its recorded level (through a limiter): on its own
 // file level it was too quiet over a full recording.
 let gOut=null, gIdx=0, gTimer=0;
-const gLv={mix:Math.min(1,Math.max(0.05,+(pref("lvmix")||0.7))), mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
-const mixGain=()=>3.6*gLv.mix*gLv.mix, melGain=()=>0.9*gLv.mel*gLv.mel, voxGain=()=>4*gLv.vox*gLv.vox;
+const MIX_MID=0.7;                                     // meter position that means "as the app balanced it"
+const gLv={mix:Math.min(1,Math.max(0.05,+(pref("lvmix2")||MIX_MID))), mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
+const mixGain=()=>(pr.mixAuto||1.76)*(gLv.mix/MIX_MID)**2, melGain=()=>0.9*gLv.mel*gLv.mel, voxGain=()=>4*gLv.vox*gLv.vox;
 // Which guides sound while practising: the synth line, the sung harmony, both or neither.
 // They are switched with the two buttons to the right of play, also in the middle of a take.
 let gMel=pref("gmel")!=="0", gVox=pref("gvox")==="1";
@@ -802,8 +803,19 @@ let oGain=null, oLevel=Math.max(50,Math.min(300,+(pref("ovol")||100)));
 function origRoute(){ if(!pr.ctx||oGain) return;
   try{ const src=pr.ctx.createMediaElementSource(pr.audio), lim=pr.ctx.createDynamicsCompressor(); oGain=pr.ctx.createGain();
     lim.threshold.value=-3; lim.knee.value=3; lim.ratio.value=12; lim.attack.value=0.003; lim.release.value=0.15;
-    src.connect(oGain); oGain.connect(lim); lim.connect(pr.ctx.destination) }catch(e){ oGain=null }
+    src.connect(oGain); oGain.connect(lim); lim.connect(pr.ctx.destination);
+    oAn=pr.ctx.createAnalyser(); oAn.fftSize=2048; oBuf=new Float32Array(2048); src.connect(oAn) }catch(e){ oGain=null }
   origApply() }
+// How loud the original is in each bundle (as recorded in the file), listened to while practising:
+// a take is later played back a little under this, the way a harmony sits under the lead.
+let oAn=null, oBuf=null; const oMs={};
+function origMeasure(t){ if(!oAn) return; const i=bundleAt(t); if(i<0) return; oAn.getFloatTimeDomainData(oBuf); let e=0; for(let k=0;k<oBuf.length;k++) e+=oBuf[k]*oBuf[k];
+  const a=oMs[i]||(oMs[i]={s:0,n:0}); a.s+=e/oBuf.length; a.n++ }
+function takeBalance(i,ch){                           // gain that puts the sung parts of the take 3 dB under the original
+  const a=oMs[i]; if(!a||a.n<20) return 0; const W=1024, fr=[]; for(let o=0;o+W<=ch.length;o+=W){ let e=0; for(let k=o;k<o+W;k++) e+=ch[k]*ch[k]; fr.push(e/W) }
+  if(fr.length<8) return 0; const top=fr.slice().sort((x,y)=>x-y)[Math.floor(fr.length*0.9)], loud=fr.filter(x=>x>top*0.06); if(!loud.length||top<=0) return 0;   // silences between phrases do not count
+  const voice=Math.sqrt(loud.reduce((x,y)=>x+y,0)/loud.length), orig=Math.sqrt(a.s/a.n)*(oLevel/100)*0.7;
+  return Math.min(14,Math.max(0.25,orig*0.71/voice)) }
 function origDuck(on){ if(oGain) oGain.gain.value=oLevel/100*(on?0.7:1); else pr.audio.volume=Math.min(1,oLevel/100)*(on?0.7:1) }
 function origApply(){ $("oVol").value=oLevel; $("oOut").textContent=oLevel+"%";
   if(oGain){ oGain.gain.value=oLevel/100; } else pr.audio.volume=Math.min(1,oLevel/100) }
@@ -864,6 +876,7 @@ async function prMix(i){                              // play the take over the 
   prMixStop(); prStop(); const tk=pr.takes[i]; if(!tk||!pr.ctx) return;
   const len=tk.chunks.reduce((a,c)=>a+c.length,0), buf=pr.ctx.createBuffer(1,len,tk.sr), ch=buf.getChannelData(0); let o=0;
   for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
+  pr.mixAuto=takeBalance(i,ch)||1.76;
   const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=mixGain(); pr.mixGain=g; src.connect(g); g.connect(pr.ctx.destination);
   // claimed before the first wait: a tap during that wait (practice, another card, the same button
   // twice) must be able to cancel this, or the take starts on top of the practice and the
@@ -872,7 +885,13 @@ async function prMix(i){                              // play the take over the 
   try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); if(pr.mixSrc!==src) return; pr.audio.currentTime=tk.t0; origDuck(true); await pr.audio.play() }
   catch(e){ if(pr.mixSrc===src){ prMixStop(); toast("재생을 시작하지 못했습니다") } return }
   if(pr.mixSrc!==src) return;
-  src.start(0,Math.min(buf.duration,Math.max(0,MIC_LAG+DELAY_S-0.08)));   // the take is late by the measured delay; skip that much
+  // The take joins once the original is really moving, at the place the original has reached:
+  // "play" resolving is not yet sound, and starting the take then made it run ahead of the song.
+  const p0=pr.audio.currentTime; await new Promise(res=>{ const w=()=>{ if(pr.mixSrc!==src||pr.audio.currentTime>p0+0.03) res(); else requestAnimationFrame(w) }; w() });
+  if(pr.mixSrc!==src) return;
+  // the take is late by the microphone-and-earphone delay; skip that much (the app's own hand-over
+  // delay was already taken off when it was recorded)
+  src.start(0,Math.min(buf.duration,Math.max(0,pr.audio.currentTime-tk.t0+MIC_LAG-(pr.native?0.05:0))));
   // the score follows the playback, as it does while practising
   const loop=()=>{ if(pr.mixSrc!==src) return; $("prSeek").value=prTime(); $("prNow").textContent=mmss(prTime()); prLyricShow(); prDraw(); requestAnimationFrame(loop) }; loop();
 }
@@ -969,7 +988,7 @@ async function openPractice(){
     while(bi+1<bs.length&&bs[bi+1].t&&t>=bs[bi+1].t[0]) bi++;
     const inHarm=bs.length?s.parts[bi]===0:true, mode=bs.length?s.modes[bi]:s.style;
     return {t,d,m,h:inHarm?(data[mode]||[])[i]||0:0} });
-  if(pr.song!==s){ pr.takes={}; prMixStop(); prStop(); if(pr.url){ try{URL.revokeObjectURL(pr.url)}catch(e){} } pr.url=URL.createObjectURL(s.blob); pr.audio.src=pr.url; pr.trace=[]; pr.tA=0 }
+  if(pr.song!==s){ pr.takes={}; prMixStop(); prStop(); if(pr.url){ try{URL.revokeObjectURL(pr.url)}catch(e){} } pr.url=URL.createObjectURL(s.blob); pr.audio.src=pr.url; pr.trace=[]; pr.tA=0; for(const k in oMs) delete oMs[k] }
   const same=pr.song===s&&pr.stat&&pr.stat.length===pr.notes.length;        // coming back to the tab keeps the marks
   pr.song=s; pr.bundles=bs; if(!same) pr.stat=pr.notes.map(()=>({n:0,sung:0,hit:0}));
   const ps=pr.notes.flatMap(n=>n.h?[n.m,n.h]:[n.m]); pr.lo=Math.min(...ps)-3; pr.hi=Math.max(...ps)+3;
@@ -1020,7 +1039,7 @@ function prTarget(t){ const ns=pr.notes; if(pr.cur>=ns.length||ns[pr.cur].t>t) p
 let prN=0;
 function prTick(){
   if(!pr.on) return;
-  const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN; voxTick(t);
+  const t=prTime(), tj=t-MIC_LAG-DELAY_S; let m=NaN; voxTick(t); origMeasure(t);
   const stale=pr.native&&performance.now()-mic.last>200;                           // the app stopped sending: no pitch, not the old one
   if(pr.an&&!stale){ pr.an.getFloatTimeDomainData(pr.buf); const f=pr.native?detectPitch(pr.buf,pr.micSr,Math.max(0.0012,mic.floor*1.6),0.2):detectPitch(pr.buf,pr.micSr||pr.ctx.sampleRate); mic.hz=f; m=f?69+12*Math.log2(f/440):NaN;
     // only the last moments count.  Entries from *later* in the song (left over when the position
@@ -1095,7 +1114,7 @@ for(const [id,key] of [["tMix","mix"],["tMel","mel"],["tVox","vox"]]){ const b=$
     const dy=y0-e.clientY; if(!moved&&Math.abs(dy)<4) return;
     if(!moved){ moved=true; if(!isOn()) tap() }                                       // adjusting a guide that is off turns it on
     gLv[key]=Math.min(1,Math.max(0.05,lv0+dy/140)); guideApply(); meter() };
-  const up=()=>{ if(!down) return; down=false; clearTimeout(timer); m.hidden=true; if(moved) pref("lv"+key,gLv[key].toFixed(2)); else tap() };
+  const up=()=>{ if(!down) return; down=false; clearTimeout(timer); m.hidden=true; if(moved) pref(key==="mix"?"lvmix2":"lv"+key,gLv[key].toFixed(2)); else tap() };
   b.onpointerup=up; b.onpointercancel=()=>{ down=false; moved=false; clearTimeout(timer); m.hidden=true }; b.oncontextmenu=e=>e.preventDefault() }
 $("prSeek").oninput=e=>prSeekTo(+e.target.value);
 addEventListener("resize",()=>{ if(!$("screen-practice").hidden) prDraw() });
