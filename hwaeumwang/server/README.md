@@ -44,3 +44,9 @@ python hwaeumwang/server/pipeline.py 노래.mp3 노래.hwaeum.json
 
 결과 `.json`은 앱의 곡 추가로 mp3와 함께 넣을 수도 있습니다.
 받은 mp3와 결과는 `hwaeumwang/server/data/`에 남습니다(저장소에는 올라가지 않습니다).
+
+## 내 컴퓨터 대신 Colab에서 켜기
+
+회사 컴퓨터처럼 서버를 켜 두기 곤란한 경우, 구글 Colab의 무료 GPU에서 같은 서버를 켤 수 있습니다.
+[colab_server.ipynb](https://colab.research.google.com/github/hojung1231/qwer/blob/ccr-bfdf6d41-ijaztk/hwaeumwang/server/colab_server.ipynb)
+를 열어 비밀단어를 적고 "모두 실행"하면 주소가 나옵니다. 탭을 닫으면 꺼집니다.
