@@ -14,6 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 V2M = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "vocal2midi"))
 sys.path.insert(0, V2M)
 PER_BUNDLE = 4                       # lyric lines per bundle: must match the app
+VERSION = "2"                        # raise when results change, so the server's kept results are not reused
 
 
 # ------------------------------------------------------------------ lyrics kept in the file
@@ -43,12 +44,33 @@ def syllables(line):
     return max(1, n)
 
 
-def align(ns, syl, beat, c_skip=0.7, w_cnt=1.0, w_gap=1.5, w_b=0.8):
+def pauses(ns, t, voiced):
+    """Seconds of silence in the voice just before each note.  The written notes are joined up
+    (a short breath is given to the note before it), so the pauses are read from the voice itself."""
+    dt = float(t[1] - t[0]); out = np.zeros(len(ns))
+    for i in range(1, len(ns)):
+        a = ns[i - 1][0] + min(ns[i - 1][1], 0.15); b = ns[i][0] + 0.12
+        seg = voiced[int(a / dt):max(int(a / dt) + 1, int(b / dt))]
+        run = best = 0
+        for x in seg:
+            run = 0 if x else run + 1; best = max(best, run)
+        out[i] = best * dt
+    return out
+
+
+def align(ns, syl, beat, pause=None, c_skip=0.7, w_cnt=1.0, w_gap=1.5, w_b=0.8, rate=None):
     """Lay lyric lines over the notes: each line takes a run of notes about as long as its
     syllable count, lines begin after pauses, notes with no words (ad libs) may be skipped."""
     N, M = len(ns), len(syl)
     st = np.array([n[0] for n in ns]); en = np.array([n[0] + n[1] for n in ns])
-    gap = np.zeros(N + 1); gap[1:N] = np.maximum(0, st[1:] - en[:-1]) / beat; gap[0] = 4; gap[N] = 4
+    gap = np.zeros(N + 1); gap[1:N] = np.maximum(0, st[1:] - en[:-1]) / beat
+    if pause is not None:
+        gap[1:N] = np.maximum(gap[1:N], np.asarray(pause)[1:N] / beat)
+    gap[0] = 4; gap[N] = 4
+    # A singer often spreads one syllable over several notes, so a line takes more notes than it
+    # has syllables.  How many more is read off the whole song (all notes over all syllables);
+    # matching one note to one syllable made the words run further and further ahead.
+    r = min(2.2, max(1.0, N / max(1, sum(syl)))) if rate is None else rate
     INF = 1e9; dp = np.full((M + 1, N + 1), INF); bk = np.zeros((M + 1, N + 1, 2), int); dp[0, 0] = 0
     for j in range(M + 1):
         for i in range(N + 1):
@@ -58,7 +80,7 @@ def align(ns, syl, beat, c_skip=0.7, w_cnt=1.0, w_gap=1.5, w_b=0.8):
             if i < N and c + c_skip < dp[j, i + 1]:
                 dp[j, i + 1] = c + c_skip; bk[j, i + 1] = (j, i)
             if j < M:
-                s = syl[j]; g = 0.0
+                s = syl[j] * r; g = 0.0
                 for k in range(1, min(N - i, int(2.5 * s) + 3) + 1):
                     if k > 1:
                         g += max(0.0, gap[i + k - 1] - 0.5)
@@ -76,6 +98,161 @@ def align(ns, syl, beat, c_skip=0.7, w_cnt=1.0, w_gap=1.5, w_b=0.8):
             segs.append((pj, pi, i))
         j, i = pj, pi
     return segs[::-1]
+
+
+# ------------------------------------------------------------------ where the words are, by listening
+def sung_chunks(t, voiced, join=0.35, max_len=20.0, max_pause=1.5):
+    """Stretches of singing to hand to the recogniser one at a time.  Given the whole song it
+    skips long passages; given one stretch at a time it writes down nearly every word."""
+    runs, a = [], None
+    for k, x in enumerate(voiced):
+        if x and a is None:
+            a = k
+        if not x and a is not None:
+            runs.append([float(t[a]), float(t[k])]); a = None
+    ph = []
+    for r in runs:
+        if r[1] - r[0] < 0.08:
+            continue
+        if ph and r[0] - ph[-1][1] < join:
+            ph[-1][1] = r[1]
+        else:
+            ph.append(r)
+    out = []
+    for a, b in (x for x in ph if x[1] - x[0] > 0.3):
+        if out and a - out[-1][1] < max_pause and b - out[-1][0] < max_len:
+            out[-1][1] = b
+        else:
+            out.append([a, b])
+    return out
+
+
+def transcribe(vocal, sr, chunks, lang="ko", progress=lambda f: None):
+    """[(start s, end s, word)] of what is sung, or None when no recogniser is installed."""
+    try:
+        from faster_whisper import WhisperModel
+        import librosa
+    except Exception:
+        return None
+    name = os.environ.get("HWAEUM_ASR", "small"); model = None
+    for dev, ct in (("cuda", "float16"), ("cpu", "int8")):
+        try:
+            model = WhisperModel(name, device=dev, compute_type=ct)
+            model.transcribe(np.zeros(16000, np.float32), language=lang)        # fails here if the GPU libraries are missing
+            break
+        except Exception:
+            model = None
+    if model is None:
+        return None
+    y = librosa.resample(vocal, orig_sr=sr, target_sr=16000) if sr != 16000 else vocal
+    words = []
+    for k, (a, b) in enumerate(chunks):
+        a0 = max(0.0, a - 0.3)
+        segs, _ = model.transcribe(y[int(a0 * 16000):int((b + 0.3) * 16000)], language=lang, word_timestamps=True, vad_filter=False,
+                                   condition_on_previous_text=False, temperature=0.0, beam_size=5,
+                                   no_speech_threshold=None, log_prob_threshold=None, compression_ratio_threshold=None)
+        for sg in segs:
+            words += [(a0 + w.start, a0 + w.end, w.word) for w in (sg.words or [])]
+        progress((k + 1) / len(chunks))
+    return words
+
+
+def _units(text):
+    """A word as comparable sound units: Hangul syllables split into their letters (so 바램 and
+    바람 still mostly agree), other letters and digits as they are."""
+    out = []
+    for ch in text.lower():
+        if "가" <= ch <= "힣":
+            c = ord(ch) - 0xAC00
+            out += [("i", c // 588), ("v", (c % 588) // 28)] + ([("f", c % 28)] if c % 28 else [])
+        elif ch.isalnum():
+            out.append(("c", ch))
+    return out
+
+
+def heard_lines(lyr, words, min_match=0.5):
+    """Start and end of each lyric line from the recognised words: the lyrics and the recognised
+    text are matched letter by letter (the recogniser mishears words, but mostly keeps their
+    sounds and their order).  Lines it could not place come back as None."""
+    L = [(u, j) for j, l in enumerate(lyr) for u in _units(l)]
+    R = []
+    for a, b, w in words:
+        us = _units(w)
+        R += [(u, a + (b - a) * k / len(us), a + (b - a) * (k + 1) / len(us)) for k, u in enumerate(us)]
+    n, m = len(L), len(R)
+    if not n or not m:
+        return [None] * len(lyr)
+    D = np.zeros((n + 1, m + 1), np.float32); D[:, 0] = np.arange(n + 1); D[0, :] = np.arange(m + 1)
+    lu = [x[0] for x in L]; ru = [x[0] for x in R]
+    for i in range(1, n + 1):
+        prev = D[i - 1]; cur = D[i]; u = lu[i - 1]; left = float(cur[0])
+        for k in range(1, m + 1):
+            v = prev[k - 1] + (0.0 if u == ru[k - 1] else 1.0)
+            if prev[k] + 1.0 < v:
+                v = prev[k] + 1.0
+            if left + 1.0 < v:
+                v = left + 1.0
+            cur[k] = v; left = v
+    i, k = n, m; hits = [[] for _ in lyr]; pos = {}; count = [0] * len(lyr)
+    for u, j in L:
+        count[j] += 1
+    first = {}
+    for idx, (u, j) in enumerate(L):
+        first.setdefault(j, idx)
+    while i > 0 and k > 0:
+        if D[i, k] == D[i - 1, k - 1] + (0.0 if lu[i - 1] == ru[k - 1] else 1.0):
+            if lu[i - 1] == ru[k - 1]:
+                hits[L[i - 1][1]].append((i - 1 - first[L[i - 1][1]], R[k - 1][1], R[k - 1][2]))
+            i -= 1; k -= 1
+        elif D[i, k] == D[i - 1, k] + 1.0:
+            i -= 1
+        else:
+            k -= 1
+    out = []
+    for j, h in enumerate(hits):
+        h.sort()
+        if not h or len(h) < min_match * count[j] or h[0][0] > 0.34 * count[j]:
+            out.append(None); continue                   # too little heard, or its beginning was not heard
+        out.append((h[0][1], h[-1][2]))
+    return out
+
+
+def place_lines(lyr, notes, heard):
+    """A start and an end for every line: heard lines sit where they were heard (moved onto the
+    nearest note), the others are spread between their neighbours by their length."""
+    M = len(lyr); syl = [syllables(l) for l in lyr]; st = np.array([n[0] for n in notes])
+    start = [None] * M; end = [None] * M
+    for j, h in enumerate(heard):
+        if h:
+            k = int(np.argmin(np.abs(st - h[0])))
+            start[j] = float(st[k]) if abs(st[k] - h[0]) <= 0.5 else h[0]; end[j] = max(h[1], start[j] + 0.3)
+    for j in range(1, M):                                # the recogniser's order is kept; a line cannot begin before the one above it
+        if start[j] is not None:
+            prev = next((start[q] for q in range(j - 1, -1, -1) if start[q] is not None), None)
+            if prev is not None and start[j] <= prev:
+                start[j] = end[j] = None
+    j = 0
+    while j < M:
+        if start[j] is not None:
+            j += 1; continue
+        a = j
+        while j < M and start[j] is None:
+            j += 1
+        lo = end[a - 1] if a else float(st[0]); hi = start[j] if j < M else float(notes[-1][0] + notes[-1][1])
+        tot = sum(syl[a:j]) or 1; acc = 0
+        for q in range(a, j):
+            start[q] = lo + (hi - lo) * acc / tot; acc += syl[q]; end[q] = lo + (hi - lo) * acc / tot
+            k = int(np.argmin(np.abs(st - start[q])))
+            if abs(st[k] - start[q]) <= 0.6 and (q == 0 or st[k] > start[q - 1]):
+                start[q] = float(st[k])
+    en = np.array([n[0] + n[1] for n in notes])
+    for j in range(M):                                   # a line ends with its last note, not at the next line after an interlude
+        nxt = start[j + 1] if j + 1 < M else 1e9
+        inside = en[(st >= start[j] - 0.05) & (st < nxt - 0.05)]
+        if len(inside):
+            end[j] = min(end[j], float(inside[-1])) if heard[j] is None else min(max(end[j], start[j] + 0.2), nxt)
+        end[j] = max(start[j] + 0.2, min(end[j], nxt))
+    return [(float(a), float(b)) for a, b in zip(start, end)]
 
 
 # ------------------------------------------------------------------ the whole job
@@ -138,9 +315,18 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
     title, artist, lyr = tags(mp3)
     notes = [(float(t), float(d), int(m)) for t, d, m in mel]
     bundle_times, line_times, cover = [], [], []
-    segs = align(notes, [syllables(l) for l in lyr], beat) if lyr else None
-    if segs and len(segs) == len(lyr):
-        span = [(notes[a][0], notes[e - 1][0] + notes[e - 1][1]) for _, a, e in segs]
+    voiced = N.voicing(z["per"], z["rms"], rel_db=-18.0)
+    span, how = None, "none"
+    if lyr:
+        words = transcribe(vocal, sr, sung_chunks(z["t"], voiced), progress=lambda f: progress(96 + 3 * f, "가사 듣는 중"))
+        heard = heard_lines(lyr, words) if words else None
+        if heard and sum(h is not None for h in heard) >= 0.4 * len(lyr):
+            span = place_lines(lyr, notes, heard); how = f"heard {sum(h is not None for h in heard)}/{len(lyr)}"
+        else:                                            # no recogniser, or a language it could not follow: count notes instead
+            segs = align(notes, [syllables(l) for l in lyr], beat, pauses(notes, z["t"], voiced))
+            if segs and len(segs) == len(lyr):
+                span = [(notes[a][0], notes[e - 1][0] + notes[e - 1][1]) for _, a, e in segs]; how = "counted"
+    if span:
         line_times = [round(s, 2) for s, _ in span]
         for i in range(0, len(lyr), PER_BUNDLE):
             part = span[i:i + PER_BUNDLE]
@@ -155,7 +341,7 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
             "mel": [[round(t, 3), round(d, 3), m] for t, d, m in notes],
             "up": [int(x) for x in lines["up"]], "down": [int(x) for x in lines["down"]], "arranged": [int(x) for x in lines["arranged"]],
             "bundleTimes": bundle_times, "lineTimes": line_times, "arrangedCover": cover, "harm": harm,
-            "made": {"device": rep.get("timings", {}).get("device", "?"), "separator": rep.get("separator", "?"), "lyrics": len(lyr)}}
+            "made": {"device": rep.get("timings", {}).get("device", "?"), "separator": rep.get("separator", "?"), "lyrics": len(lyr), "lines": how}}
     progress(100, "완료")
     return pack
 

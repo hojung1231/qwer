@@ -104,7 +104,7 @@ class Handler(BaseHTTPRequestHandler):
         if not 0 < n <= MAX_BYTES:
             return self._json(413, {"error": "size"})
         body = self.rfile.read(n)
-        jid = hashlib.sha1(body).hexdigest()[:16]
+        jid = hashlib.sha1(body + pipeline.VERSION.encode()).hexdigest()[:16]     # a newer pipeline does not answer from old results
         name = urllib.parse.parse_qs(u.query).get("name", [""])[0].strip()
         with LOCK:
             job = JOBS.get(jid)

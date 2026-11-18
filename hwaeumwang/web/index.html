@@ -353,7 +353,7 @@ $("srvTest").onclick=async()=>{ const u=srvRead(), st=$("srvState"); if(!u){ st.
   catch(e){ st.textContent="연결하지 못했습니다. 같은 와이파이인지, 서버가 켜져 있는지 확인해 주세요." } };
 // The song goes to the server, which answers with the song's data; the percentage is the server's own.
 async function extractRemote(s,li){
-  s.state="busy"; const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
+  const was=s.state; s.state="busy"; const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
   const pct=document.createElement("span"); pct.className="pct"; pct.setAttribute("role","status"); pct.textContent="0%"; btn.replaceWith(pct);
   const st=document.createElement("div"); st.className="stage"; const bar=document.createElement("i"); st.append(bar); meta.append(st);
   const show=p=>{ bar.style.setProperty("--p",p.toFixed(1)+"%"); pct.textContent=Math.floor(p)+"%" }, u=srvUrl(), wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -367,7 +367,7 @@ async function extractRemote(s,li){
       if(j.state==="done") break; show(Math.min(99,j.progress||0)) }
     const pk=await (await fetch(u+"/job/"+id+"/pack",{headers:srvHead()})).json(); if(!packValid(pk)) throw new Error("서버가 보낸 자료를 읽지 못했습니다");
     pk.title=norm(s.title); await packSave(pk); s.state="done"; s.result=pk.info; dbPut(s); render();
-  }catch(e){ s.state=""; render(); toast(e&&e.name==="TypeError"?"서버에 연결하지 못했습니다. 주소와 와이파이를 확인해 주세요":String(e.message||e)) }
+  }catch(e){ s.state=was==="done"?"done":""; render(); toast(e&&e.name==="TypeError"?"서버에 연결하지 못했습니다. 주소와 와이파이를 확인해 주세요":String(e.message||e)) }
 }
 function extract(s,li){
   if(s.state) return;
@@ -496,6 +496,9 @@ function render(){
     if(s.state==="busy") s.state=undefined;                       // a run interrupted by a reload starts over
     if(s.state==="done"&&s.result){ const d=document.createElement("span"); d.className="detail";
       d.textContent=`멜로디 ${s.result.notes}음 · ${s.result.key} · ${s.result.bpm}BPM · ${s.result.sig}`; meta.append(d) }
+    if(editing&&s.state==="done"&&s.blob&&srvUrl()){            // have the server work the song out again (after the server was improved)
+      const r=document.createElement("button"); r.className="ext"; r.type="button"; r.textContent="다시 추출"; r.setAttribute("aria-label",s.title+" 다시 추출");
+      r.onclick=()=>{ for(const o of li.querySelectorAll(".del")) o.remove(); extractRemote(s,li) }; li.append(r) }
     if(editing){ const x=document.createElement("button"); x.className="del"; x.type="button"; x.setAttribute("aria-label",s.title+" 삭제");
       x.onclick=async()=>{ if(s.example){ exampleHidden=true; pref("ex","hidden") } else { songs=songs.filter(o=>o!==s); await dbDel(s.id) }
         if(current===s){ current=null; closePlayer() }
@@ -967,7 +970,10 @@ function prLyricTimes(){
   pr.lyr=out.sort((a,b)=>a.t-b.t); pr.lyrAt=-2;
 }
 function prLyricShow(){                               // the line being sung is lit inside its bundle's card
-  const L=pr.lyr||[], t=prTime()+0.25; let i=-1; while(i+1<L.length&&L[i+1].t<=t) i++;
+  // The song's clock runs ahead of what is heard by the earphones' delay (a quarter of a second
+  // and more over Bluetooth); the measured delay, less the microphone's small share, is taken off
+  // so that a line lights up when its first word is heard, with a slight lead for the eye.
+  const L=pr.lyr||[], t=prTime()-Math.max(0,MIC_LAG-0.08)+0.1; let i=-1; while(i+1<L.length&&L[i+1].t<=t) i++;
   if(i===pr.lyrAt) return; pr.lyrAt=i; const cur=L[i];
   for(const c of pr.cards) c.lines.forEach((el,k)=>el.classList.toggle("cur",!!cur&&cur.bi===c.i&&cur.k===k));
 }

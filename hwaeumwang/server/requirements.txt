@@ -6,3 +6,4 @@ librosa
 soundfile
 mido
 pyworld
+faster-whisper      # listens for the words, to place the lyric lines; without it lines are placed by counting notes
