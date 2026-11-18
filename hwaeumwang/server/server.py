@@ -2,6 +2,8 @@
 
     python server.py                 # listens on every network interface, port 8787
     python server.py --key 비밀단어    # only requests carrying this word are served
+    python server.py --tunnel        # also open an internet address (needs cloudflared), for a
+                                     # phone that is not on this computer's network
 
     POST /extract?name=<song title>   body: the mp3 file      -> {"id": ...}
     GET  /job/<id>                                            -> {"state","progress","message"}
@@ -12,7 +14,7 @@ One song is worked on at a time; others wait their turn.  Finished results are k
 by the file's content, so sending the same song again answers at once.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os, queue, socket, threading, traceback, urllib.parse
+import argparse, hashlib, json, os, queue, re, shutil, socket, subprocess, threading, traceback, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pipeline
@@ -131,17 +133,35 @@ def addresses():
     return out or ["127.0.0.1"]
 
 
+def tunnel(port):
+    """A temporary public https address for this server (Cloudflare quick tunnel, no account)."""
+    exe = shutil.which("cloudflared")
+    if not exe:
+        print("cloudflared 가 없습니다.  Windows: winget install Cloudflare.cloudflared  설치 뒤 창을 새로 열어 주세요."); return
+    p = subprocess.Popen([exe, "tunnel", "--url", f"http://localhost:{port}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, encoding="utf-8", errors="replace")
+    def watch():
+        for line in p.stdout:
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+            if m:
+                print(f"\n어디서나 되는 주소 (앱의 서버 주소 칸에 넣기):  {m.group(0)}\n(서버를 다시 켜면 주소가 바뀝니다)\n", flush=True)
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def main():
     global KEY
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8787); ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--key", default=os.environ.get("HWAEUM_KEY", ""))
+    ap.add_argument("--tunnel", action="store_true", help="open a public https address with cloudflared")
     a = ap.parse_args(); KEY = a.key
     os.makedirs(DATA, exist_ok=True)
     threading.Thread(target=worker, daemon=True).start()
     print("화음왕 추출 서버  ·  계산 장치:", device())
     for ip in addresses():
         print(f"앱의 서버 주소 칸에 넣을 주소:  http://{ip}:{a.port}")
+    if a.tunnel:
+        tunnel(a.port)
     ThreadingHTTPServer((a.host, a.port), Handler).serve_forever()
 
 

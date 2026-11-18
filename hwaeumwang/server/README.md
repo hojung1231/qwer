@@ -28,7 +28,10 @@ python hwaeumwang/server/server.py
 앱 → 내 음악창고 → 오른쪽 위 **서버** → 그 주소를 넣고 **연결 확인** → **저장**.
 그다음 곡 카드의 **화음 추출**을 누르면 됩니다.
 
-- 휴대폰과 컴퓨터가 **같은 와이파이**에 있어야 합니다.
+- 위 주소는 휴대폰과 컴퓨터가 **같은 공유기**에 물려 있을 때 됩니다 (컴퓨터는 랜선, 휴대폰은 그 공유기의 와이파이여도 됩니다).
+- 같은 공유기가 아니면(휴대폰이 LTE/5G이거나 다른 와이파이) 인터넷 주소를 엽니다:
+  `winget install Cloudflare.cloudflared` 를 한 번 설치하고 `python hwaeumwang/server/server.py --tunnel --key 비밀단어` 로 켜면
+  `https://....trycloudflare.com` 주소가 나옵니다. 이 주소는 누구나 닿을 수 있으니 비밀단어를 꼭 정하고, 서버를 다시 켜면 주소가 바뀝니다.
 - 처음 켤 때 Windows 방화벽이 물으면 **개인 네트워크 허용**을 누릅니다.
 - 첫 곡은 분리 모델(약 80MB)을 내려받느라 더 걸립니다.
 - 남이 쓰지 못하게 하려면 `python hwaeumwang/server/server.py --key 비밀단어` 로 켜고 앱에도 같은 단어를 넣습니다.
