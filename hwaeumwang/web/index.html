@@ -99,6 +99,17 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .score span{font-size:.7rem;color:var(--muted);font-weight:700}
 #prSeek{width:100%;margin:10px 0 0;accent-color:var(--brand)}
 .times{display:flex;justify-content:space-between;color:var(--muted);font-size:.76rem;font-variant-numeric:tabular-nums}
+.brand-acts{display:flex;gap:14px;align-items:center}
+.srv{border:1px solid var(--hair);border-radius:20px;background:var(--raise);color:var(--ink);padding:18px;width:min(340px,calc(100vw - 40px))}
+.srv::backdrop{background:rgba(0,0,0,.55)}
+.srv h2{margin:0 0 6px;font-size:1.1rem;font-weight:900}
+.srv p{margin:0 0 10px;color:var(--muted);font-size:.82rem}
+.srv label{display:block;font-size:.76rem;font-weight:700;color:var(--muted);margin:10px 0 4px}
+.srv input{width:100%;height:42px;border-radius:12px;border:1px solid var(--hair);background:var(--bg);color:var(--ink);padding:0 12px;font:inherit}
+.srv .state{min-height:1.4em;margin:10px 0 0;color:var(--ink)}
+.srv .row{display:flex;gap:8px;margin-top:10px}
+.srv .row button{flex:1;height:42px;border-radius:999px;background:var(--bg);font-weight:700}
+.srv .row .main{background:var(--brand);color:var(--on-brand)}
 .pr-head{display:flex;align-items:center;gap:10px;margin:6px 0 4px}
 .pr-title{flex:1;min-width:0;font-size:1.05rem;font-weight:900;letter-spacing:-.02em;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gear{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted)}
@@ -199,7 +210,8 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5h18l1.2-10.2-5.5 4.3L12 4.5 7.3 11.6 1.8 7.3z" fill="var(--brand)"/><rect x="3" y="18.8" width="18" height="2.4" rx="1.2" fill="var(--brand)"/></svg>
       화음왕
     </div>
-    <button class="text-btn" id="editBtn" type="button" aria-pressed="false" hidden>편집</button>
+    <span class="brand-acts"><button class="text-btn" id="srvBtn" type="button">서버</button>
+    <button class="text-btn" id="editBtn" type="button" aria-pressed="false" hidden>편집</button></span>
   </div>
 
   <section id="screen-library">
@@ -287,6 +299,15 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
   <p class="seg-desc" id="tDesc"></p>
 </aside>
 
+<dialog class="srv" id="srvDlg" aria-labelledby="srvTitle">
+  <h2 id="srvTitle">추출 서버</h2>
+  <p>화음 추출을 해 줄 컴퓨터의 주소입니다. 그 컴퓨터에서 서버를 켜면 창에 주소가 나옵니다.</p>
+  <label for="srvUrl">주소</label><input id="srvUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://192.168.0.10:8787">
+  <label for="srvKey">비밀단어 (서버에 정했을 때만)</label><input id="srvKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <p class="state" id="srvState" role="status"></p>
+  <div class="row"><button type="button" id="srvTest">연결 확인</button><button type="button" id="srvSave" class="main">저장</button></div>
+</dialog>
+
 <div class="toast" id="toast" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="화면 전환">
@@ -322,11 +343,37 @@ EXAMPLE.style=pref("ex_style")||"up";
 try{ const p=JSON.parse(pref("ex_modes")||"null"); if(Array.isArray(p)) EXAMPLE.modes=p }catch(e){}
 try{ const p=JSON.parse(pref("ex_before")||"null"); if(Array.isArray(p)) EXAMPLE.partsBefore=p }catch(e){}
 let exampleHidden=pref("ex")==="hidden";
-// No server is connected to this prototype yet, so extraction only counts up to 100%.
-// The estimate follows the song's length; the real job takes about a minute for a four-minute song.
+// ---- the extraction server: a computer that does the heavy work for this phone
+const srvUrl=()=>(pref("server")||"").trim().replace(/\/+$/,""), srvHead=()=>pref("skey")?{"x-hwaeum-key":pref("skey")}:{};
+function srvOpen(){ $("srvUrl").value=srvUrl(); $("srvKey").value=pref("skey")||""; $("srvState").textContent=""; $("srvDlg").showModal() }
+$("srvBtn").onclick=srvOpen;
+$("srvDlg").onclick=e=>{ if(e.target===$("srvDlg")) $("srvDlg").close() };
+const srvRead=()=>{ let u=$("srvUrl").value.trim().replace(/\/+$/,""); if(u&&!/^https?:\/\//i.test(u)) u="http://"+u; return u };
+$("srvSave").onclick=()=>{ pref("server",srvRead()); pref("skey",$("srvKey").value.trim()); $("srvDlg").close(); toast(srvUrl()?"서버 주소를 저장했습니다":"서버 주소를 지웠습니다") };
+$("srvTest").onclick=async()=>{ const u=srvRead(), st=$("srvState"); if(!u){ st.textContent="주소를 넣어 주세요"; return } st.textContent="확인 중…";
+  try{ const r=await fetch(u+"/health",{signal:AbortSignal.timeout(6000)}), j=await r.json(); st.textContent=j.ok?`연결됨 · 계산 장치: ${j.device}`:"서버가 아닌 것 같습니다" }
+  catch(e){ st.textContent="연결하지 못했습니다. 같은 와이파이인지, 서버가 켜져 있는지 확인해 주세요." } };
+// The song goes to the server, which answers with the song's data; the percentage is the server's own.
+async function extractRemote(s,li){
+  s.state="busy"; const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
+  const pct=document.createElement("span"); pct.className="pct"; pct.setAttribute("role","status"); pct.textContent="0%"; btn.replaceWith(pct);
+  const st=document.createElement("div"); st.className="stage"; const bar=document.createElement("i"); st.append(bar); meta.append(st);
+  const show=p=>{ bar.style.setProperty("--p",p.toFixed(1)+"%"); pct.textContent=Math.floor(p)+"%" }, u=srvUrl(), wait=ms=>new Promise(r=>setTimeout(r,ms));
+  try{
+    const r=await fetch(u+"/extract?name="+encodeURIComponent(norm(s.title)),{method:"POST",headers:{...srvHead(),"content-type":"audio/mpeg"},body:s.blob});
+    if(r.status===401) throw new Error("비밀단어가 맞지 않습니다"); if(!r.ok) throw new Error("서버가 파일을 받지 않았습니다 ("+r.status+")");
+    const {id}=await r.json(); let miss=0;
+    for(;;){ await wait(1000); let j;
+      try{ j=await (await fetch(u+"/job/"+id,{headers:srvHead()})).json(); miss=0 }catch(e){ if(++miss>20) throw new Error("서버와 연결이 끊겼습니다"); continue }
+      if(j.state==="error") throw new Error(j.message||"추출에 실패했습니다");
+      if(j.state==="done") break; show(Math.min(99,j.progress||0)) }
+    const pk=await (await fetch(u+"/job/"+id+"/pack",{headers:srvHead()})).json(); if(!packValid(pk)) throw new Error("서버가 보낸 자료를 읽지 못했습니다");
+    pk.title=norm(s.title); await packSave(pk); s.state="done"; s.result=pk.info; dbPut(s); render();
+  }catch(e){ s.state=""; render(); toast(e&&e.name==="TypeError"?"서버에 연결하지 못했습니다. 주소와 와이파이를 확인해 주세요":String(e.message||e)) }
+}
 function extract(s,li){
   if(s.state) return;
-  if(!s.example&&!hasData(s)){ toast("이 곡의 화음 데이터 파일이 필요해요 (곡 추가로 .json을 함께 넣기)"); return }
+  if(!s.example&&!hasData(s)){ if(srvUrl()&&s.blob) extractRemote(s,li); else{ toast("추출 서버 주소를 먼저 넣어 주세요"); srvOpen() } return }
   s.state="busy";
   const total=Math.max(8,Math.min(20,(s.dur||200)*0.05))*1000, t0=performance.now();
   const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
@@ -890,7 +937,9 @@ document.querySelector("main").addEventListener("scroll",()=>{ if(!$("screen-pra
 // melody notes sung in that bundle: notes are shared out by syllable count, and each line break is
 // moved to the longest pause near it (singers breathe between lines).
 function prLyricTimes(){
-  const out=[]; for(const [bi,b] of pr.bundles.entries()){ if(!b.t||!b.lines.length) continue;
+  const out=[], pk=packOf(pr.song), LT=pk&&Array.isArray(pk.lineTimes)&&pk.lineTimes.length?pk.lineTimes:null;
+  for(const [bi,b] of pr.bundles.entries()){ if(!b.t||!b.lines.length) continue;
+    if(LT&&LT.length>=b.to){ b.lines.forEach((l,k)=>out.push({t:k?LT[b.from-1+k]:Math.min(b.t[0],LT[b.from-1]),text:l,bi,k})); continue }
     const ns=pr.notes.filter(n=>n.t>=b.t[0]-0.3&&n.t<b.t[1]), syl=b.lines.map(l=>Math.max(1,(l.match(/[가-힣]|[A-Za-z0-9]+/g)||[]).length)), tot=syl.reduce((a,c)=>a+c,0);
     if(ns.length<b.lines.length){ b.lines.forEach((l,k)=>out.push({t:b.t[0]+(b.t[1]-b.t[0])*k/b.lines.length,text:l,bi,k})); continue }
     // every way of placing the line breaks is tried (a bundle has few notes): long pauses win,

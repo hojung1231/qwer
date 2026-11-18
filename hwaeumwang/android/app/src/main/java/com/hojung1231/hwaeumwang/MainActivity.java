@@ -64,6 +64,8 @@ public class MainActivity extends Activity {
         setContentView(web);
 
         WebSettings s = web.getSettings();
+        // the extraction server is a computer on the home network, reached over plain http
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);                       // localStorage and IndexedDB keep the library on the device
         s.setMediaPlaybackRequiresUserGesture(false);

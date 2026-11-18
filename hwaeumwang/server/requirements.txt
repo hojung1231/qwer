@@ -1,0 +1,8 @@
+# PyTorch is installed separately so that the build matching the graphics card is chosen
+# (see README.md).  Everything else:
+demucs
+torchcrepe
+librosa
+soundfile
+mido
+pyworld
