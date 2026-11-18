@@ -135,7 +135,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .transport .mini{width:38px;height:38px;background:var(--raise);color:var(--ink)}
 .transport .mini svg{width:22px;height:22px}
 .transport .mini:disabled{opacity:.35}
-#tMel,#tVox{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#tMix,#tMel,#tVox{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .lvmeter{position:fixed;z-index:9;width:14px;height:120px;margin:-132px 0 0 -7px;border-radius:7px;background:var(--raise);border:1px solid var(--hair);overflow:hidden;display:flex;align-items:flex-end;pointer-events:none}
 .lvmeter i{display:block;width:100%;background:var(--brand)}
 .transport .mini.act{background:var(--brand);color:var(--on-brand)}
@@ -731,8 +731,8 @@ function detectPitch(x,sr,gate=0.008,thr=YIN_THR){
 // down.  The sung harmony goes up to four times its recorded level (through a limiter): on its own
 // file level it was too quiet over a full recording.
 let gOut=null, gIdx=0, gTimer=0;
-const gLv={mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
-const melGain=()=>0.9*gLv.mel*gLv.mel, voxGain=()=>4*gLv.vox*gLv.vox;
+const gLv={mix:Math.min(1,Math.max(0.05,+(pref("lvmix")||0.7))), mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
+const mixGain=()=>3.6*gLv.mix*gLv.mix, melGain=()=>0.9*gLv.mel*gLv.mel, voxGain=()=>4*gLv.vox*gLv.vox;
 // Which guides sound while practising: the synth line, the sung harmony, both or neither.
 // They are switched with the two buttons to the right of play, also in the middle of a take.
 let gMel=pref("gmel")!=="0", gVox=pref("gvox")==="1";
@@ -864,7 +864,7 @@ async function prMix(i){                              // play the take over the 
   prMixStop(); prStop(); const tk=pr.takes[i]; if(!tk||!pr.ctx) return;
   const len=tk.chunks.reduce((a,c)=>a+c.length,0), buf=pr.ctx.createBuffer(1,len,tk.sr), ch=buf.getChannelData(0); let o=0;
   for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
-  const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=1.8; src.connect(g); g.connect(pr.ctx.destination);
+  const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=mixGain(); pr.mixGain=g; src.connect(g); g.connect(pr.ctx.destination);
   // claimed before the first wait: a tap during that wait (practice, another card, the same button
   // twice) must be able to cancel this, or the take starts on top of the practice and the
   // microphone hears the recorded voice from the earphones
@@ -1080,19 +1080,23 @@ $("oVol").oninput=e=>{ oLevel=+e.target.value; pref("ovol",oLevel); origApply() 
 $("prPlay").onclick=()=>pr.on?prStop():prStart();
 // the buttons beside play act on the bundle whose card is the current one
 $("tRec").onclick=()=>{ const c=pr.curCard; if(!c||c.solo||pr.song.locked[c.i]) return; prMixStop(); prStop(); prSeekTo(Math.max(0,pr.bundles[c.i].t[0]-1.5)); prStart() };
-$("tMix").onclick=()=>{ if(pr.curCard) prMix(pr.curCard.i) };
 // A tap switches a guide on or off.  Holding the button and sliding up or down sets how loud it is;
 // a meter above the button shows the level while the finger is down.
-function guideApply(){ if(gOut) gOut.gain.value=melGain() }                 // the sung harmony picks its level up on the next frame
-for(const [id,key] of [["tMel","mel"],["tVox","vox"]]){ const b=$(id), m=$("lvMeter"); let y0=0, lv0=0, drag=false, down=false;
-  const flip=()=>{ if(key==="mel"){ gMel=!gMel; pref("gmel",gMel?"1":"0") } else { gVox=!gVox; pref("gvox",gVox?"1":"0") } guideButtons(); if(pr.on) guideStart() };
+function guideApply(){ if(gOut) gOut.gain.value=melGain(); if(pr.mixGain) pr.mixGain.gain.value=mixGain() }   // the sung harmony picks its level up on the next frame
+const HOLD_MS=200;                                    // the meter appears only after the finger has rested this long
+for(const [id,key] of [["tMix","mix"],["tMel","mel"],["tVox","vox"]]){ const b=$(id), m=$("lvMeter"); let y0=0, lv0=0, moved=false, down=false, armed=false, timer=0;
+  const isOn=()=>key==="mel"?gMel:key==="vox"?gVox:true;
+  const tap=()=>{ if(key==="mix"){ if(pr.curCard) prMix(pr.curCard.i); return }
+    if(key==="mel"){ gMel=!gMel; pref("gmel",gMel?"1":"0") } else { gVox=!gVox; pref("gvox",gVox?"1":"0") } guideButtons(); if(pr.on) guideStart() };
   const meter=()=>{ const r=b.getBoundingClientRect(); m.hidden=false; m.style.left=(r.left+r.width/2)+"px"; m.style.top=r.top+"px"; m.firstElementChild.style.height=(gLv[key]*100).toFixed(0)+"%" };
-  b.onpointerdown=e=>{ down=true; drag=false; y0=e.clientY; lv0=gLv[key]; try{ b.setPointerCapture(e.pointerId) }catch(x){} };
-  b.onpointermove=e=>{ if(!down) return; const dy=y0-e.clientY; if(!drag&&Math.abs(dy)<8) return;
-    if(!drag){ drag=true; if(!(key==="mel"?gMel:gVox)) flip() }                 // adjusting a guide that is off turns it on
+  b.onpointerdown=e=>{ down=true; moved=false; armed=false; y0=e.clientY; lv0=gLv[key]; try{ b.setPointerCapture(e.pointerId) }catch(x){}
+    clearTimeout(timer); timer=setTimeout(()=>{ if(down){ armed=true; meter() } },HOLD_MS) };
+  b.onpointermove=e=>{ if(!down) return; if(!armed){ y0=e.clientY; return }           // sliding counts from where the finger is when the meter appears
+    const dy=y0-e.clientY; if(!moved&&Math.abs(dy)<4) return;
+    if(!moved){ moved=true; if(!isOn()) tap() }                                       // adjusting a guide that is off turns it on
     gLv[key]=Math.min(1,Math.max(0.05,lv0+dy/140)); guideApply(); meter() };
-  const up=()=>{ if(!down) return; down=false; m.hidden=true; if(drag) pref("lv"+key,gLv[key].toFixed(2)); else flip() };
-  b.onpointerup=up; b.onpointercancel=()=>{ down=false; drag=false; m.hidden=true }; b.oncontextmenu=e=>e.preventDefault() }
+  const up=()=>{ if(!down) return; down=false; clearTimeout(timer); m.hidden=true; if(moved) pref("lv"+key,gLv[key].toFixed(2)); else tap() };
+  b.onpointerup=up; b.onpointercancel=()=>{ down=false; moved=false; clearTimeout(timer); m.hidden=true }; b.oncontextmenu=e=>e.preventDefault() }
 $("prSeek").oninput=e=>prSeekTo(+e.target.value);
 addEventListener("resize",()=>{ if(!$("screen-practice").hidden) prDraw() });
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) prStop() });
