@@ -135,6 +135,9 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .transport .mini{width:38px;height:38px;background:var(--raise);color:var(--ink)}
 .transport .mini svg{width:22px;height:22px}
 .transport .mini:disabled{opacity:.35}
+#tMel,#tVox{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.lvmeter{position:fixed;z-index:9;width:14px;height:120px;margin:-132px 0 0 -7px;border-radius:7px;background:var(--raise);border:1px solid var(--hair);overflow:hidden;display:flex;align-items:flex-end;pointer-events:none}
+.lvmeter i{display:block;width:100%;background:var(--brand)}
 .transport .mini.act{background:var(--brand);color:var(--on-brand)}
 .pcard .lock{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--bg);flex:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .pcard .lock svg{width:18px;height:18px}
@@ -291,9 +294,6 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 <aside class="pset" id="prSet" aria-label="소리 설정" inert>
   <h2 class="label" id="oLabel">원곡 소리 크기</h2>
   <div class="vol"><input id="oVol" type="range" min="50" max="300" step="10" value="100" aria-labelledby="oLabel"><output id="oOut">100%</output></div>
-  <h2 class="label" id="gLabel">화음 소리 크기</h2>
-  <div class="steps" id="gSteps" role="radiogroup" aria-labelledby="gLabel"></div>
-  <p class="seg-desc" id="gDesc"></p>
 </aside>
 
 <dialog class="srv" id="srvDlg" aria-labelledby="srvTitle">
@@ -305,6 +305,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
   <div class="row"><button type="button" id="srvTest">연결 확인</button><button type="button" id="srvSave" class="main">저장</button></div>
 </dialog>
 
+<div class="lvmeter" id="lvMeter" hidden><i></i></div>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="화면 전환">
@@ -726,13 +727,12 @@ function detectPitch(x,sr,gate=0.008,thr=YIN_THR){
   return sr/(best+sh);
 }
 // Guide tone for the harmony line, mixed over the original: five steps, step 1 silent, step 5 loudest.
-const GUIDE_GAIN=[0.06,0.12,0.25,0.45,0.8]; let guide=+(pref("guide")||3), gOut=null, gIdx=0, gTimer=0;
-function renderGuide(){ const box=$("gSteps"); box.textContent="";
-  for(let k=1;k<=5;k++){ const b=document.createElement("button"); b.type="button"; b.setAttribute("role","radio"); b.setAttribute("aria-checked",guide===k);
-    b.setAttribute("aria-label",`${k}단계`+(k===1?", 가장 작게":k===5?", 가장 크게":"")); b.append(String(k));
-    const sm=document.createElement("small"); sm.textContent=k===1?"작게":k===5?"최대":""; b.append(sm);
-    b.onclick=()=>{ guide=k; pref("guide",k); if(gOut) gOut.gain.value=GUIDE_GAIN[k-1]; renderGuide() }; box.append(b) }
-}
+// How loud each guide is: a level from 0 to 1 per guide, set by holding its button and sliding up or
+// down.  The sung harmony goes up to four times its recorded level (through a limiter): on its own
+// file level it was too quiet over a full recording.
+let gOut=null, gIdx=0, gTimer=0;
+const gLv={mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
+const melGain=()=>0.9*gLv.mel*gLv.mel, voxGain=()=>4*gLv.vox*gLv.vox;
 // Which guides sound while practising: the synth line, the sung harmony, both or neither.
 // They are switched with the two buttons to the right of play, also in the middle of a take.
 let gMel=pref("gmel")!=="0", gVox=pref("gvox")==="1";
@@ -759,9 +759,15 @@ function voice(ctx,out,f,at,end){
 // The sung harmony: one recording per style, all kept in step with the original; only the one that
 // matches the bundle being sung is audible, and nothing sounds in 솔로 bundles.
 const vox={up:new Audio(),down:new Audio(),arranged:new Audio()}; let voxFor=null, voxOn=false, voxSync=0;
+const vNode={};                                        // each harmony player through its own gain, so it can exceed 100%
+function voxRoute(){ if(!pr.ctx) return; let lim=voxRoute.lim;
+  for(const k in vox){ if(vNode[k]) continue;
+    try{ if(!lim){ lim=voxRoute.lim=pr.ctx.createDynamicsCompressor(); lim.threshold.value=-3; lim.knee.value=3; lim.ratio.value=12; lim.attack.value=0.003; lim.release.value=0.15; lim.connect(pr.ctx.destination) }
+      const g=pr.ctx.createGain(); g.gain.value=0; pr.ctx.createMediaElementSource(vox[k]).connect(g); g.connect(lim); vNode[k]=g; vox[k].volume=1 }catch(e){} } }
+function voxSet(k,v){ if(vNode[k]) vNode[k].gain.value=v; else vox[k].volume=Math.min(1,v) }
 async function voxLoad(){
   const key=norm(pr.song.title); if(voxFor===key) return true;
-  try{ for(const k in vox){ const url=await harmSrc(pr.song,k); if(!url) return false; vox[k].src=url; vox[k].volume=0 }
+  try{ for(const k in vox){ const url=await harmSrc(pr.song,k); if(!url) return false; vox[k].src=url; voxSet(k,0) }
     voxFor=key; return true }catch(e){ return false }
 }
 let voxUsed=[];
@@ -770,15 +776,15 @@ async function voxStart(){
   if(!pr.on||!gVox) return; const t=prTime(), s=pr.song;
   // only the styles this song actually uses are played; the others stay paused
   voxUsed=[...new Set(s.modes.filter((m,i)=>s.parts[i]===0))].filter(k=>vox[k]);
-  for(const k in vox){ vox[k].volume=0; vox[k].playbackRate=1;
+  voxRoute(); for(const k in vox){ voxSet(k,0); vox[k].playbackRate=1;
     if(voxUsed.includes(k)){ try{ vox[k].currentTime=t }catch(e){} vox[k].play().catch(()=>{}) } else vox[k].pause() }
   voxOn=true; voxSync=performance.now()+600;          // let them settle before the first correction
 }
 function voxStop(){ voxOn=false; for(const k in vox){ vox[k].pause(); vox[k].playbackRate=1 } }
 function voxTick(t){                                  // called every frame while practising
   if(!voxOn) return; let i=bundleAt(t); if(i<0) for(let k=pr.bundles.length-1;k>=0;k--){ const r=pr.bundles[k].t; if(r&&t>=r[0]){ i=k; break } }
-  const mode=i>=0&&pr.song.parts[i]===0?pr.song.modes[i]:null, lv=Math.min(1,GUIDE_GAIN[guide-1]*1.25);
-  for(const k of voxUsed) vox[k].volume=k===mode?lv:0;
+  const mode=i>=0&&pr.song.parts[i]===0?pr.song.modes[i]:null, lv=voxGain();
+  for(const k of voxUsed) voxSet(k,k===mode?lv:0);
   // Keeping two players in step by jumping one of them is heard as a stutter, and on a phone the
   // reported position is coarse enough to trigger a jump every time.  So: drift is taken up by
   // playing a hair faster or slower, and a jump is kept for when they are really apart.
@@ -787,7 +793,7 @@ function voxTick(t){                                  // called every frame whil
     if(Math.abs(d)>0.4){ try{ v.currentTime=t+0.03 }catch(e){} v.playbackRate=1; voxSync=performance.now()+900 }
     else v.playbackRate=Math.abs(d)<0.04?1:Math.max(0.97,Math.min(1.03,1-d*0.25)) }
 }
-function guideStart(){ guideStop(); if(gVox) voxStart(); if(!gMel||!pr.ctx) return; gOut=pr.ctx.createGain(); gOut.gain.value=GUIDE_GAIN[guide-1]; gOut.connect(pr.ctx.destination);
+function guideStart(){ guideStop(); if(gVox) voxStart(); if(!gMel||!pr.ctx) return; gOut=pr.ctx.createGain(); gOut.gain.value=melGain(); gOut.connect(pr.ctx.destination);
   const t=prTime(); gIdx=pr.notes.findIndex(n=>n.t+n.d>t); if(gIdx<0) gIdx=pr.notes.length; guideSchedule(); gTimer=setInterval(guideSchedule,120) }
 function guideStop(){ voxStop(); clearInterval(gTimer); if(gOut){ try{ gOut.disconnect() }catch(e){} gOut=null } }
 // Loudness of the original: the song is routed through a gain (up to 3x) and a limiter so that a
@@ -878,14 +884,14 @@ async function prListen(i,kind){
   origRoute(); const t0=Math.max(0,b.t[0]-0.3);
   if(kind==="voice"){ if(!(await voxLoad())){ if(pr.listen===L){ prListenStop(); toast("이 곡은 육성 화음이 아직 없습니다") } return } L.v=vox[s.modes[i]]||vox.up }
   if(pr.listen!==L) return;
-  try{ pr.audio.currentTime=t0; if(L.v){ L.v.currentTime=t0; L.v.playbackRate=1; L.v.volume=0.8 } await pr.audio.play(); if(pr.listen!==L){ return } if(L.v) L.v.play().catch(()=>{}) }
+  try{ pr.audio.currentTime=t0; if(L.v){ L.v.currentTime=t0; L.v.playbackRate=1; voxRoute(); for(const k in vox) if(vox[k]===L.v) voxSet(k,voxGain()) } await pr.audio.play(); if(pr.listen!==L){ return } if(L.v) L.v.play().catch(()=>{}) }
   catch(e){ if(pr.listen===L){ prListenStop(); toast("재생을 시작하지 못했습니다") } return }
   if(kind==="mel"&&pr.ctx){ L.out=pr.ctx.createGain(); L.out.gain.value=0.45; L.out.connect(pr.ctx.destination); const now=pr.ctx.currentTime;
     for(const n of pr.notes){ if(!n.h||n.t<b.t[0]-0.3||n.t>=b.t[1]) continue; voice(pr.ctx,L.out,440*Math.pow(2,(n.h-69)/12),now+Math.max(0,n.t-t0),now+Math.max(0.05,n.t+n.d-t0)) }
     }
   const loop=()=>{ if(pr.listen!==L) return; $("prSeek").value=prTime(); $("prNow").textContent=mmss(prTime()); prLyricShow(); prDraw(); requestAnimationFrame(loop) }; loop();
 }
-function prListenStop(){ const L=pr.listen; if(!L) return; pr.listen=null; pr.audio.pause(); if(L.v){ L.v.pause(); L.v.volume=0 } if(L.out){ try{ L.out.disconnect() }catch(e){} } prUpdateCards() }
+function prListenStop(){ const L=pr.listen; if(!L) return; pr.listen=null; pr.audio.pause(); if(L.v){ L.v.pause(); for(const k in vox) if(vox[k]===L.v) voxSet(k,0) } if(L.out){ try{ L.out.disconnect() }catch(e){} } prUpdateCards() }
 function prMixStop(){ prListenStop(); if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
 function prPlayIcon(on){ const b=$("prPlay"); b.setAttribute("aria-label",on?"정지":"시작");
   b.innerHTML=on?'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>'
@@ -970,7 +976,7 @@ async function openPractice(){
   $("prEmpty").hidden=true; $("prBody").hidden=false; $("prTitle").textContent=s.title;
   const last=pr.notes[pr.notes.length-1]; $("prSeek").max=Math.ceil(last.t+last.d+2); $("prEnd").textContent=mmss(+$("prSeek").max);
   $("prNote").textContent="이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 원곡 소리를 주워 판정이 흐려집니다.";
-  prLyricTimes(); prRenderCards(); prLyricShow(); renderGuide(); guideButtons(); origApply(); prUpdateStats(); prDraw();
+  prLyricTimes(); prRenderCards(); prLyricShow(); guideButtons(); origApply(); prUpdateStats(); prDraw();
 }
 const prTime=()=>pr.on?pr.tA+(performance.now()-pr.tP)/1000:pr.audio.currentTime||0;
 pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.mixing>=0&&pr.audio.currentTime>=pr.mixEnd) prMixStop(); if(pr.listen&&pr.audio.currentTime>=pr.listen.end) prListenStop() };
@@ -1075,8 +1081,18 @@ $("prPlay").onclick=()=>pr.on?prStop():prStart();
 // the buttons beside play act on the bundle whose card is the current one
 $("tRec").onclick=()=>{ const c=pr.curCard; if(!c||c.solo||pr.song.locked[c.i]) return; prMixStop(); prStop(); prSeekTo(Math.max(0,pr.bundles[c.i].t[0]-1.5)); prStart() };
 $("tMix").onclick=()=>{ if(pr.curCard) prMix(pr.curCard.i) };
-$("tMel").onclick=()=>{ gMel=!gMel; pref("gmel",gMel?"1":"0"); guideButtons(); if(pr.on) guideStart() };
-$("tVox").onclick=()=>{ gVox=!gVox; pref("gvox",gVox?"1":"0"); guideButtons(); if(pr.on) guideStart() };
+// A tap switches a guide on or off.  Holding the button and sliding up or down sets how loud it is;
+// a meter above the button shows the level while the finger is down.
+function guideApply(){ if(gOut) gOut.gain.value=melGain() }                 // the sung harmony picks its level up on the next frame
+for(const [id,key] of [["tMel","mel"],["tVox","vox"]]){ const b=$(id), m=$("lvMeter"); let y0=0, lv0=0, drag=false, down=false;
+  const flip=()=>{ if(key==="mel"){ gMel=!gMel; pref("gmel",gMel?"1":"0") } else { gVox=!gVox; pref("gvox",gVox?"1":"0") } guideButtons(); if(pr.on) guideStart() };
+  const meter=()=>{ const r=b.getBoundingClientRect(); m.hidden=false; m.style.left=(r.left+r.width/2)+"px"; m.style.top=r.top+"px"; m.firstElementChild.style.height=(gLv[key]*100).toFixed(0)+"%" };
+  b.onpointerdown=e=>{ down=true; drag=false; y0=e.clientY; lv0=gLv[key]; try{ b.setPointerCapture(e.pointerId) }catch(x){} };
+  b.onpointermove=e=>{ if(!down) return; const dy=y0-e.clientY; if(!drag&&Math.abs(dy)<8) return;
+    if(!drag){ drag=true; if(!(key==="mel"?gMel:gVox)) flip() }                 // adjusting a guide that is off turns it on
+    gLv[key]=Math.min(1,Math.max(0.05,lv0+dy/140)); guideApply(); meter() };
+  const up=()=>{ if(!down) return; down=false; m.hidden=true; if(drag) pref("lv"+key,gLv[key].toFixed(2)); else flip() };
+  b.onpointerup=up; b.onpointercancel=()=>{ down=false; drag=false; m.hidden=true }; b.oncontextmenu=e=>e.preventDefault() }
 $("prSeek").oninput=e=>prSeekTo(+e.target.value);
 addEventListener("resize",()=>{ if(!$("screen-practice").hidden) prDraw() });
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) prStop() });
