@@ -239,7 +239,7 @@ def smart_line(mel, chords, tonic, beat):
 # ------------------------------------------------------------------ rendering with the singer's voice
 class Voice:
     """WORLD analysis of the vocal, done once; `shifted` re-synthesises it with F0 moved per note."""
-    def __init__(self, vocal, sr, f0_track=None):
+    def __init__(self, vocal, sr, f0_track=None, notes=None, tuning_cents=0.0):
         """f0_track = (times, f0_hz, voiced) from the melody extraction.  WORLD's own quick F0
         (DIO) flickers between voiced and unvoiced inside sung vowels and jumps octaves on this
         material; every such frame is re-synthesised as noise or with a wrong spectral envelope,
@@ -256,10 +256,43 @@ class Voice:
                 if 1 < b_ - a_ <= 8:
                     voiced[a_:b_] = True
             f0 = np.where(voiced, np.interp(self.tt, t, f), 0.0)
+            if notes is not None:
+                f0 = self._repair(f0, notes, tuning_cents)
         self.f0 = pw.stonemask(self.x, f0, self.tt, sr)
+        if notes is not None:                                   # the refinement must not undo the repair
+            bad = (f0 > 0) & ((self.f0 <= 0) | (np.abs(np.log2(np.maximum(self.f0, 1.0) / np.maximum(f0, 1.0))) > 0.12))
+            self.f0 = np.where(bad, f0, self.f0)
         self.sp = pw.cheaptrick(self.x, self.f0, self.tt, sr); self.ap = pw.d4c(self.x, self.f0, self.tt, sr)
+        if notes is not None:
+            # A separated vocal still carries reverb and traces of the band, and a belted high
+            # note is rough; the analysis reads all of that as breath noise, and the re-sung
+            # harmony comes out hoarse and cracking.  Sung vowels are mostly tone below a few
+            # kHz, so the noise share there is held down (the airy top is left as it is).
+            fr = np.linspace(0, sr / 2, self.ap.shape[1])
+            cap = np.clip(0.10 + 0.50 * (fr / 6000.0) ** 1.5, 0.10, 1.0)
+            v = self.f0 > 0
+            self.ap[v] = np.minimum(self.ap[v], cap[None, :])
         # consonants and breaths of a backing voice sit well under the lead's
         self.unvoiced_gain = np.where(self.f0 > 0, 1.0, 0.45)
+
+    def _repair(self, f0, notes, tuning_cents):
+        """Inside a written note the voice is singing, at about that pitch.  Frames the tracker
+        gave up on there (a doubtful moment in a long held or strained note), or put far from
+        the note (an octave slip), would be re-sung as noise: they are given the note's pitch."""
+        tt = self.tt; hop = int(round(self.sr * (tt[1] - tt[0])))
+        pad = np.pad(self.x, (hop, hop)); e = np.sqrt(np.convolve(pad ** 2, np.ones(2 * hop) / (2 * hop), mode="same"))[hop:-hop][::hop][:len(tt)]
+        e = np.pad(e, (0, len(tt) - len(e)))
+        f0 = f0.copy()
+        for t, d, m in notes:
+            k = np.flatnonzero((tt >= t) & (tt < t + d))
+            if not len(k):
+                continue
+            target = 440.0 * 2.0 ** ((m + tuning_cents / 100.0 - 69.0) / 12.0)
+            loud = e[k] > 0.25 * np.percentile(e[k], 80)          # the note really sounds here (not a breath in the middle)
+            far = (f0[k] > 0) & (np.abs(12 * np.log2(np.maximum(f0[k], 1.0) / target)) > 2.5)
+            fix = loud & ((f0[k] <= 0) | far)
+            f0[k[fix]] = target
+        return f0
 
     def shifted(self, mel, interval_semitones):
         tt = self.tt
@@ -354,7 +387,7 @@ def main():
     }
     g = 10 ** (a.harmony_db / 20)
     z = np.load(os.path.join(a.out_dir, "f0.npz"))
-    voice = Voice(vocal, sr, (z["t"], z["f0"], N.voicing(z["per"], z["rms"], rel_db=-18.0)))
+    voice = Voice(vocal, sr, (z["t"], z["f0"], N.voicing(z["per"], z["rms"], rel_db=-18.0)), mel, rep.get("tuning_cents", 0.0))
     for v in a.only:
         lines = versions[v]
         if a.pitch_source == "score":

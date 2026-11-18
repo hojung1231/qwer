@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 V2M = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "vocal2midi"))
 sys.path.insert(0, V2M)
 PER_BUNDLE = 4                       # lyric lines per bundle: must match the app
-VERSION = "2"                        # raise when results change, so the server's kept results are not reused
+VERSION = "3"                        # raise when results change, so the server's kept results are not reused
 
 
 # ------------------------------------------------------------------ lyrics kept in the file
@@ -300,7 +300,7 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
 
     progress(80, "화음 목소리 만드는 중")
     z = np.load(os.path.join(work, "f0.npz"))
-    voice = H.Voice(vocal, sr, (z["t"], z["f0"], N.voicing(z["per"], z["rms"], rel_db=-18.0)))
+    voice = H.Voice(vocal, sr, (z["t"], z["f0"], N.voicing(z["per"], z["rms"], rel_db=-18.0)), mel, rep.get("tuning_cents", 0.0))
     harm = {}
     for k, (key, pitches) in enumerate(lines.items()):
         y = voice.from_score(mel, pitches, rep.get("tuning_cents", 0.0)) * 10 ** (-5.0 / 20)
