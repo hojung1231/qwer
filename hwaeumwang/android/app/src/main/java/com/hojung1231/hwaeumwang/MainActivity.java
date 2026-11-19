@@ -348,6 +348,15 @@ public class MainActivity extends Activity {
         web.saveState(out);
     }
 
+    /** Back goes back inside the app (close a panel, previous screen); at the first screen the
+     *  app is put in the background instead of being closed. */
+    @Override
+    public void onBackPressed() {
+        if (web == null) { moveTaskToBack(true); return; }
+        web.evaluateJavascript("(function(){try{return window.__back?!!window.__back():false}catch(e){return false}})()",
+                v -> { if (!"true".equals(v)) moveTaskToBack(true); });
+    }
+
     @Override
     protected void onPause() {
         super.onPause();

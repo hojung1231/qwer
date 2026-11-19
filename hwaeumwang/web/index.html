@@ -82,14 +82,13 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .bundle{cursor:pointer}
 .bundle::after{content:"";display:block;clear:both}
 .bundle:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.play{float:right;margin:-3px -4px 4px 8px;width:32px;height:32px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
-.play::before{content:"";border-style:solid;border-width:6px 0 6px 10px;border-color:transparent transparent transparent var(--bg);margin-left:3px}
-.play.on{background:var(--brand)}
+.play{float:right;margin:-3px -4px 4px 8px;width:34px;height:34px;border-radius:50%;background:var(--bg);color:var(--ink);display:grid;place-items:center;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.play svg{width:20px;height:20px}
+.play.on{background:var(--brand);color:var(--on-brand)}
 .bundle .tag{display:inline-block;clear:both;font-style:normal;font-size:.7rem;font-weight:700;color:var(--on-brand);background:var(--brand);border-radius:999px;padding:2px 9px;margin-top:9px}
 .modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;margin-top:8px;padding:3px;border-radius:10px;background:var(--bg);clear:both}
 .modes button{padding:6px 0;border-radius:8px;font-size:.72rem;font-weight:700;color:var(--muted);white-space:nowrap}
 .modes button[aria-checked="true"]{background:var(--brand);color:var(--on-brand)}
-.play.on::before{border:0;width:10px;height:10px;border-radius:2px;background:var(--on-brand);margin:0}
 .lane{position:relative;height:min(31vh,260px);min-height:170px;border-radius:20px;background:var(--raise);overflow:hidden;margin-top:6px}
 .lane canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .verdict{position:absolute;left:10px;top:8px;font-weight:900;font-size:.8rem;padding:3px 10px;border-radius:999px;background:var(--bg);color:var(--muted)}
@@ -148,6 +147,9 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .pcard .lines div.cur{color:var(--brand);font-weight:900}
 .pcard .side{display:flex;flex-direction:column;align-items:center;gap:8px;flex:none}
 .pcard .side b{font-size:1rem;font-weight:900;font-variant-numeric:tabular-nums;min-height:1.2em}
+.pcard{position:relative}
+.pcard .num{position:absolute;right:15px;top:5px;font-size:1.35rem;font-weight:900;line-height:1;color:var(--muted);opacity:.38;pointer-events:none;font-variant-numeric:tabular-nums}
+.pcard .side{padding-top:16px}
 .pcard.solo{background:none;border-color:var(--hair)}
 .pcard.solo.now{border-color:var(--brand)}
 .lyr{margin-top:8px;text-align:center;min-height:2.9em;line-height:1.3}
@@ -567,10 +569,21 @@ const STYLE_NAME=Object.fromEntries(STYLES.map(x=>[x[0],x[1]])), STYLE_SHORT={up
 // server yet; for the three songs already analysed the measured ranges are built in, matched by title.
 const TIMES={"사랑했지만":[[16.2,39.4],[40.9,64.4],[65.5,87.1],[86.3,110.9],[110.9,129.0],[129.4,178.6],[178.6,203.3],[202.5,219.4],[218.6,246.8]],"숙녀에게":[[30.6,59.7],[58.9,84.6],[83.8,144.7],[143.9,171.3],[170.5,202.4]],"청혼":[[23.9,48.4],[47.6,71.4],[71.6,93.6],[93.6,123.6],[122.8,139.8],[139.0,165.4],[164.6,184.0],[183.2,188.2]]};
 const player=new Audio(), harm=new Audio(); let playing=-1, playUrl=null, harmUrl=null, withHarm=false, stopAt=0;
-harm.preload="auto"; harm.volume=0.9;
+harm.preload="auto";
+// The sung harmony through its own gain, so it can be set louder than the file's level (the same
+// hold-and-slide as in practice).  Without an audio context the plain element volume is used.
+let edNode=null;
+function edRoute(){ if(edNode) return; try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") pr.ctx.resume();
+    const g=pr.ctx.createGain(); pr.ctx.createMediaElementSource(harm).connect(g); g.connect(pr.ctx.destination); edNode=g; harm.volume=1 }catch(e){} edApply() }
+function edApply(){ const v=3*gLv.ed*gLv.ed; if(edNode) edNode.gain.value=v; else harm.volume=Math.min(1,v) }
+// Two players are kept in step by playing the harmony a touch faster or slower.  Jumping it to
+// the song's position (as before) cost the time the jump itself takes, so after the first play
+// the harmony kept landing behind the song.
 player.ontimeupdate=()=>{ if(playing<0) return;
   if(player.currentTime>=stopAt){ stopPlay(); return }
-  if(withHarm&&Math.abs(harm.currentTime-player.currentTime)>0.07){ try{ harm.currentTime=player.currentTime }catch(e){} } };   // keep the two in step
+  if(!withHarm||harm.seeking||harm.paused) return; const d=harm.currentTime-player.currentTime;
+  if(Math.abs(d)>0.3){ try{ harm.currentTime=player.currentTime+0.08 }catch(e){} harm.playbackRate=1 }
+  else harm.playbackRate=Math.abs(d)<0.025?1:Math.max(0.94,Math.min(1.06,1-d*0.5)) };
 player.onended=()=>stopPlay();
 harm.onerror=()=>{ if(withHarm){ withHarm=false; toast("화음 음원을 불러오지 못해 원곡만 들려드려요") } };
 function stopPlay(){ if(playing<0) return; player.pause(); harm.pause(); playing=-1; for(const b of document.querySelectorAll(".play")) b.classList.remove("on") }
@@ -590,7 +603,13 @@ async function playBundle(s,b,i,btn){
     catch(e){ toast("화음 음원을 불러오지 못해 원곡만 들려드려요") } }
   await Promise.all([ready(player),withHarm?ready(harm):null]);
   if(playing!==i) return;                                                            // stopped or switched while loading
-  try{ player.currentTime=b.t[0]; if(withHarm) harm.currentTime=b.t[0] }catch(e){}
+  // both are moved to the start and only then started together: a player that is still finding
+  // its place when "play" is called starts late
+  const at=a=>new Promise(res=>{ let done=false; const ok=()=>{ if(!done){ done=true; res() } };
+    a.addEventListener("seeked",ok,{once:true}); setTimeout(ok,1500); try{ a.currentTime=b.t[0] }catch(e){ ok() } });
+  harm.playbackRate=1; if(withHarm) edRoute();
+  await Promise.all([at(player),withHarm?at(harm):null]);
+  if(playing!==i) return;
   player.play().catch(()=>{ stopPlay(); toast("재생을 시작하지 못했습니다") });
   if(withHarm) harm.play().catch(()=>{ withHarm=false });
 }
@@ -629,7 +648,8 @@ function renderEditor(bs){
       const next=COLS[(c+1)%COLS.length]; btn.setAttribute("aria-label",`${b.from}~${b.to}번째 줄, 지금 ${name}. 누르면 ${next}(으)로 옮깁니다`);
       const pl=document.createElement("button"); pl.type="button"; pl.className="play"+(playing===i?" on":"");
       pl.setAttribute("aria-label",`${b.from}~${b.to}번째 줄 `+(c===0?`원곡과 ${STYLE_NAME[s.modes[i]]} 화음 함께 듣기`:"원곡 듣기"));
-      pl.onclick=e=>{ e.stopPropagation(); playBundle(s,b,i,pl) }; btn.append(pl);
+      pl.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.4"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0"/><path d="M17 6.5a4 4 0 0 1 0 5M19.6 4.2a7.4 7.4 0 0 1 0 9.6"/></svg>';
+      pl.onclick=e=>e.stopPropagation(); holdSlide(pl,"ed",()=>playBundle(s,b,i,pl)); btn.append(pl);
       const sm=document.createElement("small"); sm.textContent=(b.from===b.to?`${b.from}번째 줄`:`${b.from}~${b.to}번째 줄`)+(b.t?` · ${mmss(b.t[0])}`:""); btn.append(sm);
       for(const l of b.lines){ const sp=document.createElement("span"); sp.textContent=l; btn.append(sp) }
       if(c===0){                                                    // harmony style of this bundle alone
@@ -650,7 +670,18 @@ function renderEditor(bs){
   $("edSub").textContent=bs.length?`묶음을 누르면 ${COLS.join(" ↔ ")}로 옮겨집니다.`:"";
 }
 function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } harmUrl=null; harm.removeAttribute("src") }
+// The phone's back button: close what is open on top, else go to the screen before this one.
+let screenNow="library", navSkip=false; const navStack=[];
+window.__back=()=>{
+  if($("srvDlg").open){ $("srvDlg").close(); return true }
+  if($("prSet").classList.contains("open")){ setOpen(false); return true }
+  if(editing){ setEditing(false); render(); return true }
+  if(!navStack.length) return false;
+  const prev=navStack.pop(); navSkip=true;
+  if(prev==="edit") openEditTab(); else if(prev==="practice") openPractice(); else show(prev);
+  return true };
 function show(name){
+  if(name!==screenNow){ if(!navSkip){ navStack.push(screenNow); if(navStack.length>20) navStack.shift() } screenNow=name } navSkip=false;
   if(name!=="edit") stopPlay();
   if(name!=="practice"){ prRelease(); setOpen(false) }
   $("screen-library").hidden=name!=="library"; $("screen-edit").hidden=name!=="edit"; $("screen-soon").hidden=name!=="soon"; $("screen-practice").hidden=name!=="practice";
@@ -735,7 +766,7 @@ function detectPitch(x,sr,gate=0.008,thr=YIN_THR){
 // file level it was too quiet over a full recording.
 let gOut=null, gIdx=0, gTimer=0;
 const MIX_MID=0.7;                                     // meter position that means "as the app balanced it"
-const gLv={mix:Math.min(1,Math.max(0.05,+(pref("lvmix2")||MIX_MID))), mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
+const gLv={ed:Math.min(1,Math.max(0.05,+(pref("lved")||0.58))), mix:Math.min(1,Math.max(0.05,+(pref("lvmix2")||MIX_MID))), mel:Math.min(1,Math.max(0.05,+(pref("lvmel")||0.55))), vox:Math.min(1,Math.max(0.05,+(pref("lvvox")||0.6)))};
 const mixGain=()=>(pr.mixAuto||1.76)*(gLv.mix/MIX_MID)**2, melGain=()=>0.9*gLv.mel*gLv.mel, voxGain=()=>4*gLv.vox*gLv.vox;
 // Which guides sound while practising: the synth line, the sung harmony, both or neither.
 // They are switched with the two buttons to the right of play, also in the middle of a take.
@@ -860,7 +891,8 @@ function prRenderCards(){
     side.append(acc); if(!solo) side.append(lock); row.append(text,side);
     // a tap on the card itself (not on its buttons) brings the score to where this bundle begins
     card.onclick=e=>{ if(e.target.closest("button")||performance.now()-(pr.swiped||0)<400) return; prMixStop(); prSeekTo(Math.max(0,b.t[0]-1.5)); document.querySelector("main").scrollTo({top:0,behavior:"smooth"}) };
-    card.append(row); box.append(card); pr.cards.push({i,card,acc,lock,OPEN,SHUT,solo,lines}) });
+    const num=document.createElement("span"); num.className="num"; num.textContent=pr.cards.length+1; num.setAttribute("aria-label",(pr.cards.length+1)+"번째 묶음");
+    card.append(row,num); box.append(card); pr.cards.push({i,card,acc,lock,OPEN,SHUT,solo,lines}) });
   if(!pr.cards.length){ const p=document.createElement("p"); p.className="seg-desc"; p.textContent="화음으로 고른 묶음이 없습니다. ‘소절 편집’에서 묶음을 화음 열로 옮겨 주세요."; box.append(p) }
   prUpdateCards();
 }
@@ -1116,21 +1148,21 @@ $("prPlay").onclick=()=>pr.on?prStop():prStart();
 $("tRec").onclick=()=>{ const c=pr.curCard; if(!c||c.solo||pr.song.locked[c.i]) return; prMixStop(); prStop(); prSeekTo(Math.max(0,pr.bundles[c.i].t[0]-1.5)); prStart() };
 // A tap switches a guide on or off.  Holding the button and sliding up or down sets how loud it is;
 // a meter above the button shows the level while the finger is down.
-function guideApply(){ if(gOut) gOut.gain.value=melGain(); if(pr.mixGain) pr.mixGain.gain.value=mixGain() }   // the sung harmony picks its level up on the next frame
+function guideApply(){ if(gOut) gOut.gain.value=melGain(); if(pr.mixGain) pr.mixGain.gain.value=mixGain(); edApply() }   // the sung harmony picks its level up on the next frame
 const HOLD_MS=200;                                    // the meter appears only after the finger has rested this long
-for(const [id,key] of [["tMix","mix"],["tMel","mel"],["tVox","vox"]]){ const b=$(id), m=$("lvMeter"); let y0=0, lv0=0, moved=false, down=false, armed=false, timer=0;
-  const isOn=()=>key==="mel"?gMel:key==="vox"?gVox:true;
-  const tap=()=>{ if(key==="mix"){ if(pr.curCard) prMix(pr.curCard.i); return }
-    if(key==="mel"){ gMel=!gMel; pref("gmel",gMel?"1":"0") } else { gVox=!gVox; pref("gvox",gVox?"1":"0") } guideButtons(); if(pr.on) guideStart() };
+function holdSlide(b,key,tap,isOn){ const m=$("lvMeter"); let y0=0, lv0=0, moved=false, down=false, armed=false, timer=0;
   const meter=()=>{ const r=b.getBoundingClientRect(); m.hidden=false; m.style.left=(r.left+r.width/2)+"px"; m.style.top=r.top+"px"; m.firstElementChild.style.height=(gLv[key]*100).toFixed(0)+"%" };
-  b.onpointerdown=e=>{ down=true; moved=false; armed=false; y0=e.clientY; lv0=gLv[key]; try{ b.setPointerCapture(e.pointerId) }catch(x){}
+  b.onpointerdown=e=>{ e.stopPropagation(); down=true; moved=false; armed=false; y0=e.clientY; lv0=gLv[key]; try{ b.setPointerCapture(e.pointerId) }catch(x){}
     clearTimeout(timer); timer=setTimeout(()=>{ if(down){ armed=true; meter() } },HOLD_MS) };
   b.onpointermove=e=>{ if(!down) return; if(!armed){ y0=e.clientY; return }           // sliding counts from where the finger is when the meter appears
     const dy=y0-e.clientY; if(!moved&&Math.abs(dy)<4) return;
-    if(!moved){ moved=true; if(!isOn()) tap() }                                       // adjusting a guide that is off turns it on
+    if(!moved){ moved=true; if(isOn&&!isOn()) tap() }                                 // adjusting a guide that is off turns it on
     gLv[key]=Math.min(1,Math.max(0.05,lv0+dy/140)); guideApply(); meter() };
   const up=()=>{ if(!down) return; down=false; clearTimeout(timer); m.hidden=true; if(moved) pref(key==="mix"?"lvmix2":"lv"+key,gLv[key].toFixed(2)); else tap() };
   b.onpointerup=up; b.onpointercancel=()=>{ down=false; moved=false; clearTimeout(timer); m.hidden=true }; b.oncontextmenu=e=>e.preventDefault() }
+holdSlide($("tMix"),"mix",()=>{ if(pr.curCard) prMix(pr.curCard.i) });
+holdSlide($("tMel"),"mel",()=>{ gMel=!gMel; pref("gmel",gMel?"1":"0"); guideButtons(); if(pr.on) guideStart() },()=>gMel);
+holdSlide($("tVox"),"vox",()=>{ gVox=!gVox; pref("gvox",gVox?"1":"0"); guideButtons(); if(pr.on) guideStart() },()=>gVox);
 $("prSeek").oninput=e=>prSeekTo(+e.target.value);
 addEventListener("resize",()=>{ if(!$("screen-practice").hidden) prDraw() });
 document.addEventListener("visibilitychange",()=>{ if(document.hidden) prStop() });
