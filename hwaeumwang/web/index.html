@@ -147,6 +147,10 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 .pcard .lines div.cur{color:var(--brand);font-weight:900}
 .pcard .side{display:flex;flex-direction:column;align-items:center;gap:8px;flex:none}
 .pcard .side b{font-size:1rem;font-weight:900;font-variant-numeric:tabular-nums;min-height:1.2em}
+[data-band="0"]{color:var(--muted)} [data-band="1"]{color:var(--danger)} [data-band="2"]{color:var(--brand)} [data-band="3"]{color:var(--ok)}
+@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.32)}100%{transform:scale(1)}}
+.bump{animation:bump .3s cubic-bezier(.3,1.6,.5,1)} #prAcc{transform-origin:right center}
+@media (prefers-reduced-motion:reduce){.bump{animation:none}}
 .pcard{position:relative}
 .pcard .num{position:absolute;right:15px;top:5px;font-size:1.35rem;font-weight:900;line-height:1;color:var(--muted);opacity:.38;pointer-events:none;font-variant-numeric:tabular-nums}
 .pcard .side{padding-top:16px}
@@ -901,7 +905,7 @@ function prUpdateCards(){
   for(const c of pr.cards){ const b=pr.bundles[c.i], done=!c.solo&&!!s.locked[c.i];
     if(c.solo){ c.card.className="pcard solo"+(pr.on&&bundleAt(tNow)===c.i?" now":""); continue }
     let due=0,hit=0; pr.notes.forEach((n,k)=>{ if(n.h&&n.t>=b.t[0]&&n.t<b.t[1]){ due+=noteDue(pr.stat[k]); hit+=pr.stat[k].hit } });
-    c.acc.textContent=due>15?Math.round(100*hit/due)+"%":"";
+    setAcc(c.acc,due>15?Math.round(100*hit/due):null,"");
     c.card.className="pcard"+(done?" fin":"")+(pr.on&&bundleAt(tNow)===c.i?" now":"");
     if(c.lock.dataset.on!==String(done)){ c.lock.dataset.on=done; c.lock.innerHTML=done?c.SHUT:c.OPEN; c.lock.setAttribute("aria-pressed",done); c.lock.setAttribute("aria-label",done?"잠김 (꾹 눌러 풀기)":"이 묶음 녹음 잠그기") } }
   prPlaceCards();
@@ -1119,8 +1123,14 @@ function prTick(){
 // harmony note counts against it (a fifth of each note is allowed for breaths and consonants),
 // so a part that is not sung drops instead of keeping the score of the few notes that were.
 const noteDue=st=>Math.max(st.sung,0.8*st.n);
+// A score is coloured by its band (grey under 30, then red, amber, green from 70) and gives a
+// little bounce each time it goes up.
+function setAcc(el,p,none){ const txt=p===null?none:p+"%"; if(el.textContent===txt) return;
+  const was=parseInt(el.textContent); el.textContent=txt;
+  el.dataset.band=p===null?"":p>=70?"3":p>=50?"2":p>=30?"1":"0";
+  if(p!==null&&was===was&&p>was){ el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump") } }
 function prUpdateStats(){ let due=0,hit=0; for(const s of pr.stat||[]){ due+=noteDue(s); hit+=s.hit }
-  $("prAcc").textContent=due>20?Math.round(100*hit/due)+"%":"–"; $("prNow").textContent=mmss(prTime()); prLyricShow(); prUpdateCards() }
+  setAcc($("prAcc"),due>20?Math.round(100*hit/due):null,"–"); $("prNow").textContent=mmss(prTime()); prLyricShow(); prUpdateCards() }
 function prDraw(){
   const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1, w=Math.round(r.width*dpr), h=Math.round(r.height*dpr);
   if(!w||!h) return; if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h }
