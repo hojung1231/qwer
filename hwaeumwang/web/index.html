@@ -130,8 +130,8 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 @media (prefers-reduced-motion:reduce){.pset,.pset.open{transition:none}}
 .transport{display:flex;gap:12px;margin-top:6px;justify-content:center;align-items:center}
 .transport button{display:flex;align-items:center;justify-content:center;border-radius:50%}
-.transport .go{width:46px;height:46px;background:var(--brand);color:var(--on-brand)}
-.transport .go svg{width:20px;height:20px}
+.transport .go{width:46px;height:46px;background:var(--ink);color:var(--bg)}
+.transport .go svg{width:24px;height:24px}
 .transport .mini{width:38px;height:38px;background:var(--raise);color:var(--ink)}
 .transport .mini svg{width:22px;height:22px}
 .transport .mini:disabled{opacity:.35}
@@ -874,29 +874,38 @@ function prUpdateCards(){
     if(c.lock.dataset.on!==String(done)){ c.lock.dataset.on=done; c.lock.innerHTML=done?c.SHUT:c.OPEN; c.lock.setAttribute("aria-pressed",done); c.lock.setAttribute("aria-label",done?"잠김 (꾹 눌러 풀기)":"이 묶음 녹음 잠그기") } }
   prPlaceCards();
 }
-async function prMix(i){                              // play the take over the original, from where the take began
-  if(pr.mixing===i){ prMixStop(); return }
-  prMixStop(); prStop(); const tk=pr.takes[i]; if(!tk||!pr.ctx) return;
-  const len=tk.chunks.reduce((a,c)=>a+c.length,0), buf=pr.ctx.createBuffer(1,len,tk.sr), ch=buf.getChannelData(0); let o=0;
-  for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
-  pr.mixAuto=takeBalance(i,ch)||1.76;
-  const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=mixGain(); pr.mixGain=g; src.connect(g); g.connect(pr.ctx.destination);
+async function prMix(i){                              // the original from this bundle on, with my takes laid over it
+  if(pr.mixing>=0){ prMixStop(); return }
+  prMixStop(); prStop(); const first=pr.takes[i]; if(!first||!pr.ctx) return;
   // claimed before the first wait: a tap during that wait (practice, another card, the same button
-  // twice) must be able to cancel this, or the take starts on top of the practice and the
+  // twice) must be able to cancel this, or a take starts on top of the practice and the
   // microphone hears the recorded voice from the earphones
-  pr.mixing=i; pr.mixSrc=src; pr.mixEnd=tk.end; prUpdateCards();
-  try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); if(pr.mixSrc!==src) return; pr.audio.currentTime=tk.t0; origDuck(true); await pr.audio.play() }
-  catch(e){ if(pr.mixSrc===src){ prMixStop(); toast("재생을 시작하지 못했습니다") } return }
-  if(pr.mixSrc!==src) return;
-  // The take joins once the original is really moving, at the place the original has reached:
-  // "play" resolving is not yet sound, and starting the take then made it run ahead of the song.
-  const p0=pr.audio.currentTime; await new Promise(res=>{ const w=()=>{ if(pr.mixSrc!==src||pr.audio.currentTime>p0+0.03) res(); else requestAnimationFrame(w) }; w() });
-  if(pr.mixSrc!==src) return;
-  // the take is late by the microphone-and-earphone delay; skip that much (the app's own hand-over
-  // delay was already taken off when it was recorded)
-  src.start(0,Math.min(buf.duration,Math.max(0,pr.audio.currentTime-tk.t0+MIC_LAG-(pr.native?0.05:0))));
-  // the score follows the playback, as it does while practising
-  const loop=()=>{ if(pr.mixSrc!==src) return; $("prSeek").value=prTime(); $("prNow").textContent=mmss(prTime()); prLyricShow(); prDraw(); requestAnimationFrame(loop) }; loop();
+  const M={src:null,started:new Set()}; pr.mixing=i; pr.mixSrc=M; prUpdateCards();
+  try{ if(pr.ctx.state==="suspended") await pr.ctx.resume(); if(pr.mixSrc!==M) return; pr.audio.currentTime=first.t0; origDuck(true); await pr.audio.play() }
+  catch(e){ if(pr.mixSrc===M){ prMixStop(); toast("재생을 시작하지 못했습니다") } return }
+  if(pr.mixSrc!==M) return;
+  // Takes join once the original is really moving, at the place the original has reached:
+  // "play" resolving is not yet sound, and starting a take then made it run ahead of the song.
+  const p0=pr.audio.currentTime; await new Promise(res=>{ const w=()=>{ if(pr.mixSrc!==M||pr.audio.currentTime>p0+0.03) res(); else requestAnimationFrame(w) }; w() });
+  if(pr.mixSrc!==M) return;
+  const begin=(j,tk,t)=>{ M.started.add(j);
+    const len=tk.chunks.reduce((a,c)=>a+c.length,0), buf=pr.ctx.createBuffer(1,len,tk.sr), ch=buf.getChannelData(0); let o=0;
+    for(const c of tk.chunks){ for(let k=0;k<c.length;k++) ch[o+k]=c[k]/32768; o+=c.length }
+    pr.mixAuto=takeBalance(j,ch)||1.76;
+    const src=pr.ctx.createBufferSource(), g=pr.ctx.createGain(); src.buffer=buf; g.gain.value=mixGain(); pr.mixGain=g; src.connect(g); g.connect(pr.ctx.destination);
+    // the take is late by the microphone-and-earphone delay; skip that much (the app's own hand-over
+    // delay was already taken off when it was recorded)
+    const off=t-tk.t0+MIC_LAG-(pr.native?0.05:0); if(off>=buf.duration-0.2) return;
+    if(off>=0) src.start(0,off); else src.start(pr.ctx.currentTime-off,0);
+    M.src=src; M.cur=tk; src.onended=()=>{ if(M.src===src) M.src=null } };
+  // The playback does not stop at the end of the bundle: the song goes on, and each later bundle
+  // that has a take brings it in when the song gets there.  The score follows, as in practice.
+  let n=0; const loop=()=>{ if(pr.mixSrc!==M) return; const t=pr.audio.currentTime;
+    // a take is let go once the song has left its stretch (it ran out, or the position was moved)
+    if(M.src&&(t>=M.cur.end+0.2||t<M.cur.t0-0.5)){ try{ M.src.stop() }catch(e){} M.src=null }
+    for(const j of [...M.started]) if(t<pr.takes[j].t0-0.3) M.started.delete(j);          // moved back before it: it may come in again
+    if(!M.src) for(const j in pr.takes){ const tk=pr.takes[j]; if(M.started.has(j)||tk.end-tk.t0<3) continue; if(t>=tk.t0-0.25&&t<tk.end-0.5){ pr.mixing=+j; begin(j,tk,t); break } }
+    $("prSeek").value=t; $("prNow").textContent=mmss(t); prLyricShow(); prDraw(); if((n++&15)===0) prUpdateCards(); requestAnimationFrame(loop) }; loop();
 }
 // hear how one bundle's harmony goes: the original with the sung harmony, or with the synth line
 async function prListen(i,kind){
@@ -914,10 +923,10 @@ async function prListen(i,kind){
   const loop=()=>{ if(pr.listen!==L) return; $("prSeek").value=prTime(); $("prNow").textContent=mmss(prTime()); prLyricShow(); prDraw(); requestAnimationFrame(loop) }; loop();
 }
 function prListenStop(){ const L=pr.listen; if(!L) return; pr.listen=null; pr.audio.pause(); if(L.v){ L.v.pause(); for(const k in vox) if(vox[k]===L.v) voxSet(k,0) } if(L.out){ try{ L.out.disconnect() }catch(e){} } prUpdateCards() }
-function prMixStop(){ prListenStop(); if(pr.mixing<0) return; try{ pr.mixSrc.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
-function prPlayIcon(on){ const b=$("prPlay"); b.setAttribute("aria-label",on?"정지":"시작");
-  b.innerHTML=on?'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.2"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.2"/></svg>'
-               :'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8a.8.8 0 0 0-1.2.7z"/></svg>' }
+function prMixStop(){ prListenStop(); if(pr.mixing<0) return; try{ pr.mixSrc.src&&pr.mixSrc.src.stop() }catch(e){} pr.mixSrc=null; pr.mixing=-1; pr.audio.pause(); origDuck(false); prUpdateCards() }
+function prPlayIcon(on){ const b=$("prPlay"); b.setAttribute("aria-label",on?"녹음 정지":"녹음 시작");      // this button records: a dot to begin, a square to stop
+  b.innerHTML=on?'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/></svg>'
+               :'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="var(--danger)"/></svg>' }
 prPlayIcon(false);
 // The card of the bundle being practised sits right under the score while the page is at the top.
 // Once the page is scrolled it goes back to its own place in the list, so the list reads in order.
@@ -937,8 +946,8 @@ function prPlaceCards(){
     else{ const nx=pr.cards.find(o=>o.i>c.i&&o.card.parentNode===box); box.insertBefore(c.card,nx?nx.card:null) } }
   $("prCardsLabel").hidden=box.hidden=!box.children.length;
   const c=pr.curCard, tk=c&&pr.takes[c.i], has=!!tk&&tk.end-tk.t0>=3, L=c&&pr.listen&&pr.listen.i===c.i?pr.listen.kind:"";
-  $("tRec").disabled=!c||c.solo||!!pr.song.locked[c.i]; $("tMix").disabled=!has;
-  $("tMix").classList.toggle("act",!!c&&pr.mixing===c.i);
+  $("tRec").disabled=!c||c.solo||!!pr.song.locked[c.i]; $("tMix").disabled=!has&&pr.mixing<0;
+  $("tMix").classList.toggle("act",pr.mixing>=0);
 }
 { const slot=$("prNowSlot"); let x0=0,y0=0,dx=0,drag=false,card=null;
   slot.addEventListener("touchstart",e=>{ const p=e.touches[0]; x0=p.clientX; y0=p.clientY; dx=0; drag=false; card=slot.firstElementChild },{passive:true});
@@ -1004,7 +1013,7 @@ async function openPractice(){
   prLyricTimes(); prRenderCards(); prLyricShow(); guideButtons(); origApply(); prUpdateStats(); prDraw();
 }
 const prTime=()=>pr.on?pr.tA+(performance.now()-pr.tP)/1000:pr.audio.currentTime||0;
-pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.mixing>=0&&pr.audio.currentTime>=pr.mixEnd) prMixStop(); if(pr.listen&&pr.audio.currentTime>=pr.listen.end) prListenStop() };
+pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.listen&&pr.audio.currentTime>=pr.listen.end) prListenStop() };
 pr.audio.onended=()=>{ prMixStop(); prStop() };
 async function prStart(){
   if(pr.on||!pr.song) return;
