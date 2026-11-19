@@ -9,3 +9,4 @@ node_modules/
 *-verification.json
 ui-verification*/
 verification*.zip
+out_packs/
