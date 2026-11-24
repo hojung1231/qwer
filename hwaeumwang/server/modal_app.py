@@ -51,7 +51,9 @@ web_image = (
 STALE_S = 20 * 60                    # a job silent for this long is taken for dead and may be sent again
 
 
-@app.function(image=gpu_image, gpu="T4", timeout=15 * 60, scaledown_window=90, max_containers=2, volumes={"/data": vol})
+# 4 CPU cores: half of the work (decoding, tempo, the harmony voices) is CPU work, and on the default
+# fraction of a core it took longer than the GPU part.
+@app.function(image=gpu_image, gpu="T4", cpu=4.0, memory=8192, timeout=15 * 60, scaledown_window=90, max_containers=2, volumes={"/data": vol})
 def extract(body: bytes, name: str, jid: str):
     import json, sys, time, tempfile, shutil
     sys.path.insert(0, "/app/hwaeumwang/server")

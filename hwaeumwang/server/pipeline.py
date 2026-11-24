@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 V2M = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "vocal2midi"))
 sys.path.insert(0, V2M)
 PER_BUNDLE = 4                       # lyric lines per bundle: must match the app
-VERSION = "3"                        # raise when results change, so the server's kept results are not reused
+VERSION = "4"                        # raise when results change, so the server's kept results are not reused
 
 
 # ------------------------------------------------------------------ lyrics kept in the file
@@ -258,6 +258,7 @@ def place_lines(lyr, notes, heard):
 def build(mp3, work, progress=lambda p, msg="": None, name=None):
     import soundfile as sf
     os.makedirs(work, exist_ok=True)
+    clock, t_all = {}, time.time()
     progress(1, "박자 찾는 중")
     import bars
     b = bars.find_bars(mp3)
@@ -284,47 +285,77 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
         tail = open(os.path.join(work, "vocal2midi.log"), encoding="utf-8", errors="replace").read()[-600:]
         raise RuntimeError("멜로디 추출 실패: " + tail)
 
+    clock["melody"] = round(time.time() - t_all, 1)
     progress(77, "화음 만드는 중")
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
     import librosa, harmony as H, isolate, notes as N
     sr = 44100
     rep, mel = H.load_melody(work)
     if len(mel) < 8:
         raise RuntimeError("노래하는 목소리를 찾지 못했습니다")
     beat = 60.0 / rep["bpm"]; tonic = H.NAMES.index(rep["key"].split()[0])
-    stereo = isolate.decode(mp3, sr); mix = stereo.mean(0)
     vocal, _ = librosa.load(os.path.join(work, "vocal.wav"), sr=sr)
+    z = np.load(os.path.join(work, "f0.npz"))
+    voiced = N.voicing(z["per"], z["rms"], rel_db=-18.0)
+    title, artist, lyr = tags(mp3)
+    notes = [(float(t), float(d), int(m)) for t, d, m in mel]
+
+    # The words are listened for on the side (that is GPU work) while the harmony voices are made
+    # (CPU work): neither waits for the other.
+    found = {"span": None, "how": "none"}
+
+    def lyrics():
+        t0 = time.time()
+        try:
+            if not lyr:
+                return
+            words = transcribe(vocal, sr, sung_chunks(z["t"], voiced))
+            heard = heard_lines(lyr, words) if words else None
+            if heard and sum(h is not None for h in heard) >= 0.4 * len(lyr):
+                found["span"] = place_lines(lyr, notes, heard); found["how"] = f"heard {sum(h is not None for h in heard)}/{len(lyr)}"
+            else:                                        # no recogniser, or a language it could not follow: count notes instead
+                segs = align(notes, [syllables(l) for l in lyr], beat, pauses(notes, z["t"], voiced))
+                if segs and len(segs) == len(lyr):
+                    found["span"] = [(notes[a][0], notes[e - 1][0] + notes[e - 1][1]) for _, a, e in segs]; found["how"] = "counted"
+        except Exception as e:
+            print(f"[lyrics] {type(e).__name__}: {str(e)[:200]}", flush=True)
+        finally:
+            clock["lyrics"] = round(time.time() - t0, 1)
+
+    side = threading.Thread(target=lyrics, daemon=True); side.start()
+
+    t0 = time.time()
+    stereo = isolate.decode(mp3, sr); mix = stereo.mean(0)
     chords = H.estimate_chords(mix, vocal, sr, rep["midi_origin_s"], beat, tonic)
     lines = {"up": H.harmony_line(mel, chords, tonic, beat, +1), "down": H.harmony_line(mel, chords, tonic, beat, -1),
              "arranged": H.smart_line(mel, chords, tonic, beat)}
+    clock["harmony_lines"] = round(time.time() - t0, 1)
 
-    progress(80, "화음 목소리 만드는 중")
-    z = np.load(os.path.join(work, "f0.npz"))
-    voice = H.Voice(vocal, sr, (z["t"], z["f0"], N.voicing(z["per"], z["rms"], rel_db=-18.0)), mel, rep.get("tuning_cents", 0.0))
-    harm = {}
-    for k, (key, pitches) in enumerate(lines.items()):
+    progress(82, "화음 목소리 만드는 중")
+    # The voice is re-sung at 24 kHz: the result is a backing voice kept as a small mp3, which holds
+    # nothing above that anyway, and the analysis and the singing take well under half the time.
+    t0 = time.time(); VSR = 24000
+    voice = H.Voice(librosa.resample(vocal, orig_sr=sr, target_sr=VSR), VSR, (z["t"], z["f0"], voiced), mel, rep.get("tuning_cents", 0.0))
+    progress(88, "화음 목소리 만드는 중")
+
+    def sing(item):
+        key, pitches = item
         y = voice.from_score(mel, pitches, rep.get("tuning_cents", 0.0)) * 10 ** (-5.0 / 20)
         wav = os.path.join(work, f"harm_{key}.wav"); out = os.path.join(work, f"harm_{key}.mp3")
-        sf.write(wav, y, sr)
+        sf.write(wav, y, VSR)
         subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", wav, "-ac", "1", "-b:a", "48k", out], check=True)
-        harm[key] = "data:audio/mpeg;base64," + base64.b64encode(open(out, "rb").read()).decode()
         os.remove(wav)
-        progress(80 + 5 * (k + 1), "화음 목소리 만드는 중")
+        return key, "data:audio/mpeg;base64," + base64.b64encode(open(out, "rb").read()).decode()
+
+    with ThreadPoolExecutor(3) as pool:                  # the three voices at once
+        harm = dict(pool.map(sing, lines.items()))
+    clock["voices"] = round(time.time() - t0, 1)
 
     progress(96, "가사 맞추는 중")
-    title, artist, lyr = tags(mp3)
-    notes = [(float(t), float(d), int(m)) for t, d, m in mel]
+    side.join()
+    span, how = found["span"], found["how"]
     bundle_times, line_times, cover = [], [], []
-    voiced = N.voicing(z["per"], z["rms"], rel_db=-18.0)
-    span, how = None, "none"
-    if lyr:
-        words = transcribe(vocal, sr, sung_chunks(z["t"], voiced), progress=lambda f: progress(96 + 3 * f, "가사 듣는 중"))
-        heard = heard_lines(lyr, words) if words else None
-        if heard and sum(h is not None for h in heard) >= 0.4 * len(lyr):
-            span = place_lines(lyr, notes, heard); how = f"heard {sum(h is not None for h in heard)}/{len(lyr)}"
-        else:                                            # no recogniser, or a language it could not follow: count notes instead
-            segs = align(notes, [syllables(l) for l in lyr], beat, pauses(notes, z["t"], voiced))
-            if segs and len(segs) == len(lyr):
-                span = [(notes[a][0], notes[e - 1][0] + notes[e - 1][1]) for _, a, e in segs]; how = "counted"
     if span:
         line_times = [round(s, 2) for s, _ in span]
         for i in range(0, len(lyr), PER_BUNDLE):
@@ -340,7 +371,8 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
             "mel": [[round(t, 3), round(d, 3), m] for t, d, m in notes],
             "up": [int(x) for x in lines["up"]], "down": [int(x) for x in lines["down"]], "arranged": [int(x) for x in lines["arranged"]],
             "bundleTimes": bundle_times, "lineTimes": line_times, "arrangedCover": cover, "harm": harm,
-            "made": {"device": rep.get("timings", {}).get("device", "?"), "separator": rep.get("separator", "?"), "lyrics": len(lyr), "lines": how}}
+            "made": {"device": rep.get("timings", {}).get("device", "?"), "separator": rep.get("separator", "?"), "lyrics": len(lyr), "lines": how,
+                     "seconds": dict(clock, total=round(time.time() - t_all, 1), **{k: v for k, v in rep.get("timings", {}).items() if k.endswith("_s")})}}
     progress(100, "완료")
     return pack
 

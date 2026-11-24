@@ -388,6 +388,7 @@ function extPaint(s){ const ui=EXT_UI.get(s.id), p=EXT_P.get(s.id)||0; if(!ui||!
 async function extractRemote(s){
   if(RUNNING.has(s.id)) return; RUNNING.add(s.id);
   if(s.state!=="busy"){ s.jobWas=s.state==="done"; s.jobId=null } s.state="busy"; EXT_P.set(s.id,0); render();
+  const began=performance.now(), took=()=>{ const t=Math.round((performance.now()-began)/1000); return t>=60?`${Math.floor(t/60)}분 ${t%60}초`:`${t}초` };
   const u=srvUrl(), wait=ms=>new Promise(r=>setTimeout(r,ms));
   try{
     if(!s.jobId){
@@ -401,7 +402,7 @@ async function extractRemote(s){
       if(j.state==="error") throw new Error(j.message||"추출에 실패했습니다");
       if(j.state==="done") break; EXT_P.set(s.id,Math.min(99,j.progress||0)); extPaint(s) }
     const pk=await (await fetch(u+"/job/"+id+"/pack",{headers:srvHead()})).json(); if(!packValid(pk)) throw new Error("서버가 보낸 자료를 읽지 못했습니다");
-    pk.title=norm(s.title); await packSave(pk); s.state="done"; s.result=pk.info; toast(`‘${s.title}’ 화음 추출이 끝났습니다`);
+    pk.title=norm(s.title); await packSave(pk); s.state="done"; s.result=pk.info; toast(`‘${s.title}’ 화음 추출이 끝났습니다 (${took()})`);
   }catch(e){ s.state=s.jobWas?"done":""; toast(e&&e.name==="TypeError"?"서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요":String(e.message||e)) }
   RUNNING.delete(s.id); EXT_UI.delete(s.id); EXT_P.delete(s.id); delete s.jobId; delete s.jobWas; dbPut(s); if(screenNow==="library") render();
 }
