@@ -134,27 +134,26 @@ def transcribe(vocal, sr, chunks, lang="ko", progress=lambda f: None):
         import librosa
     except Exception:
         return None
-    name = os.environ.get("HWAEUM_ASR", "small"); model = None
+    name = os.environ.get("HWAEUM_ASR", "small")
+    y = librosa.resample(vocal, orig_sr=sr, target_sr=16000) if sr != 16000 else vocal
+    # The GPU is tried first.  Its libraries can be missing or mismatched, and that only shows
+    # when the first stretch is actually recognised, so the whole pass is retried on the CPU.
     for dev, ct in (("cuda", "float16"), ("cpu", "int8")):
         try:
             model = WhisperModel(name, device=dev, compute_type=ct)
-            model.transcribe(np.zeros(16000, np.float32), language=lang)        # fails here if the GPU libraries are missing
-            break
-        except Exception:
-            model = None
-    if model is None:
-        return None
-    y = librosa.resample(vocal, orig_sr=sr, target_sr=16000) if sr != 16000 else vocal
-    words = []
-    for k, (a, b) in enumerate(chunks):
-        a0 = max(0.0, a - 0.3)
-        segs, _ = model.transcribe(y[int(a0 * 16000):int((b + 0.3) * 16000)], language=lang, word_timestamps=True, vad_filter=False,
-                                   condition_on_previous_text=False, temperature=0.0, beam_size=5,
-                                   no_speech_threshold=None, log_prob_threshold=None, compression_ratio_threshold=None)
-        for sg in segs:
-            words += [(a0 + w.start, a0 + w.end, w.word) for w in (sg.words or [])]
-        progress((k + 1) / len(chunks))
-    return words
+            words = []
+            for k, (a, b) in enumerate(chunks):
+                a0 = max(0.0, a - 0.3)
+                segs, _ = model.transcribe(y[int(a0 * 16000):int((b + 0.3) * 16000)], language=lang, word_timestamps=True, vad_filter=False,
+                                           condition_on_previous_text=False, temperature=0.0, beam_size=5,
+                                           no_speech_threshold=None, log_prob_threshold=None, compression_ratio_threshold=None)
+                for sg in segs:
+                    words += [(a0 + w.start, a0 + w.end, w.word) for w in (sg.words or [])]
+                progress((k + 1) / len(chunks))
+            return words
+        except Exception as e:
+            print(f"[lyrics] recogniser failed on {dev}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+    return None
 
 
 def _units(text):

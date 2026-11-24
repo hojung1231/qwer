@@ -37,6 +37,7 @@ gpu_image = (
     .apt_install("ffmpeg", "build-essential")
     .pip_install("torch", "torchaudio")
     .pip_install("demucs", "torchcrepe", "librosa", "soundfile", "mido", "pyworld", "faster-whisper")
+    .pip_install("nvidia-cublas-cu12", "nvidia-cudnn-cu12")            # what the recogniser's GPU build is linked against
     .env({"LD_LIBRARY_PATH": f"{NV}/cublas/lib:{NV}/cudnn/lib"})          # the recogniser's GPU libraries come with torch
     .run_function(_weights)
     .add_local_dir(os.path.join(ROOT, "tools", "vocal2midi"), "/app/tools/vocal2midi", **SRC)
