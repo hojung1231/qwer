@@ -130,6 +130,22 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String version() { return BuildConfig.VERSION_NAME; }
 
+        /** Opens Android's share sheet (messengers, mail, copy) with the given text. */
+        @JavascriptInterface
+        public void share(final String text) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Intent send = new Intent(Intent.ACTION_SEND);
+                        send.setType("text/plain");
+                        send.putExtra(Intent.EXTRA_TEXT, text);
+                        startActivity(Intent.createChooser(send, "화음왕 보내기"));
+                    } catch (Exception e) { /* no app can take it: nothing to do */ }
+                }
+            });
+        }
+
         /** How Android is routing sound right now, for the status line at the bottom of the page. */
         @JavascriptInterface
         public String audioInfo() {
