@@ -24,6 +24,8 @@ jobs:
           gradle-version: '8.9'
       - name: Build APK
         working-directory: hwaeumwang/android
+        env:
+          HWAEUM_KEY: ${{ secrets.HWAEUM_KEY }}
         run: gradle :app:assembleDebug --no-daemon
       - name: Prepare APK
         run: |

@@ -1,0 +1,34 @@
+name: Deploy 화음왕 server to Modal
+on:
+  push:
+    branches: [main, ccr-bfdf6d41-ijaztk]
+    paths: ['hwaeumwang/server/**', 'tools/vocal2midi/**', '.github/workflows/hwaeumwang-modal.yml']
+  workflow_dispatch:
+concurrency:
+  group: hwaeumwang-modal
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      HWAEUM_KEY: ${{ secrets.HWAEUM_KEY }}
+    steps:
+      - name: Check that the Modal token is set
+        id: have
+        run: |
+          if [ -n "$MODAL_TOKEN_ID" ] && [ -n "$MODAL_TOKEN_SECRET" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; else echo "MODAL_TOKEN_ID / MODAL_TOKEN_SECRET are not set in the repository secrets: nothing deployed."; fi
+      - uses: actions/checkout@v4
+        if: steps.have.outputs.ok == '1'
+      - uses: actions/setup-python@v5
+        if: steps.have.outputs.ok == '1'
+        with:
+          python-version: '3.11'
+      - name: Deploy
+        if: steps.have.outputs.ok == '1'
+        run: |
+          pip install -q modal
+          if [ -z "$HWAEUM_KEY" ]; then echo "::warning::HWAEUM_KEY is not set: the server will answer anyone who knows its address."; fi
+          modal deploy hwaeumwang/server/modal_app.py
