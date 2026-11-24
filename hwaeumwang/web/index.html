@@ -444,6 +444,8 @@ const norm=t=>(t||"").trim();
 const packOf=s=>PACKS[norm(s.title)]||null;
 async function packsLoad(){ const db=await DB; if(!db) return;
   await new Promise(res=>{ try{ const q=db.transaction("packs").objectStore("packs").getAll(); q.onsuccess=()=>{ for(const p of q.result||[]) PACKS[p.title]=p; res() }; q.onerror=()=>res() }catch(e){ res() } }) }
+async function packDel(title){ delete PACKS[title]; const db=await DB; if(!db) return;
+  await new Promise(res=>{ try{ const tx=db.transaction("packs","readwrite"); tx.objectStore("packs").delete(title); tx.oncomplete=tx.onerror=tx.onabort=()=>res() }catch(e){ res() } }) }
 async function packSave(p){ PACKS[p.title]=p; const db=await DB; if(!db) return false;
   return new Promise(res=>{ try{ const tx=db.transaction("packs","readwrite"); tx.objectStore("packs").put(p); tx.oncomplete=()=>res(true); tx.onerror=tx.onabort=()=>res(false) }catch(e){ res(false) } }) }
 function packValid(p){ return p&&p.hwaeum===1&&typeof p.title==="string"&&Array.isArray(p.mel)&&Array.isArray(p.up)&&Array.isArray(p.down) }
@@ -542,7 +544,10 @@ function render(){
       const r=document.createElement("button"); r.className="ext"; r.type="button"; r.textContent="다시 추출"; r.setAttribute("aria-label",s.title+" 다시 추출");
       r.onclick=()=>{ setEditing(false); extractRemote(s) }; li.append(r) }
     if(editing){ const x=document.createElement("button"); x.className="del"; x.type="button"; x.setAttribute("aria-label",s.title+" 삭제");
-      x.onclick=async()=>{ if(s.example){ exampleHidden=true; pref("ex","hidden") } else { songs=songs.filter(o=>o!==s); await dbDel(s.id) }
+      x.onclick=async()=>{ if(s.example){ exampleHidden=true; pref("ex","hidden") } else { songs=songs.filter(o=>o!==s); await dbDel(s.id);
+          // its harmony data goes with it (unless another copy of the same song is still in the list):
+          // adding the file again then starts from nothing
+          if(!songs.some(o=>norm(o.title)===norm(s.title))) await packDel(norm(s.title)) }
         if(current===s){ current=null; closePlayer() }
         if(pr.song===s){ prRelease(); pr.song=null; pr.notes=[] }
         if(!songs.length&&exampleHidden) setEditing(false); render() }; li.append(x) }
