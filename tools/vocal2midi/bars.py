@@ -77,6 +77,19 @@ def downbeat_phase(y, sr, t0, period, beats_per_bar=4):
     return int(order[0]), margin, score.round(3).tolist()
 
 
+def tempo(path, bpm_hint=None, sr=22050):
+    """Only what the melody extraction needs before it starts: the felt tempo and whether the beat
+    divides in two or in three.  (Where the bars begin costs most of find_bars' time and is not
+    needed for that.)"""
+    y = isolate.decode(path, sr).mean(0)
+    t0, period = N.beat_grid(y, sr, bpm_hint)
+    while 60.0 / period > 115.0:
+        period *= 2.0
+    oenv = librosa.onset.onset_strength(y=y, sr=sr, hop_length=256)
+    div, s2, s3 = subdivision(oenv, 256 / sr, t0, period)
+    return {"bpm": round(60 / period, 3), "beat_subdivision": div}
+
+
 def find_bars(path, bpm_hint=None, sr=22050):
     y = isolate.decode(path, sr).mean(0)
     t0, period = N.beat_grid(y, sr, bpm_hint)

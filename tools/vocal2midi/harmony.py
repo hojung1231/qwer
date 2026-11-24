@@ -56,14 +56,18 @@ def estimate_chords(mix_mono, vocal_mono, sr, t_bar1, beat, tonic, beats_per_cho
     """One major/minor triad per half bar, from the chroma of (mix - vocal)."""
     n = min(len(mix_mono), len(vocal_mono))
     acc = mix_mono[:n] - vocal_mono[:n]
+    dur = n / sr
+    if sr > 22050:                         # chords live well below 10 kHz: half the samples, half the time
+        acc = librosa.resample(acc, orig_sr=sr, target_sr=22050); hop = 2048 * 22050 // sr; sr = 22050
+    else:
+        hop = 2048
     acc = librosa.effects.harmonic(acc, margin=3.0)
-    hop = 2048
     chroma = librosa.feature.chroma_cqt(y=acc, sr=sr, hop_length=hop, bins_per_octave=36)
     # bass chroma (below ~260 Hz) tells the root apart from its relatives
     bass = librosa.feature.chroma_cqt(y=acc, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("C1"), n_octaves=3, bins_per_octave=36)
     seg = beat * beats_per_chord
     first = t_bar1 - np.ceil(t_bar1 / seg) * seg
-    nseg = int((n / sr - first) / seg)
+    nseg = int((dur - first) / seg)
     ft = np.arange(chroma.shape[1]) * hop / sr
     C = np.zeros((nseg, 12)); B = np.zeros((nseg, 12))
     for s in range(nseg):
@@ -250,7 +254,10 @@ class Voice:
         which is heard as a scratchy rustle.  The CREPE track is far steadier."""
         import pyworld as pw
         self.pw, self.sr, self.x = pw, sr, vocal.astype(np.float64)
-        f0, self.tt = pw.dio(self.x, sr, f0_floor=70.0, f0_ceil=1000.0, frame_period=5.0)
+        if f0_track is None:
+            f0, self.tt = pw.dio(self.x, sr, f0_floor=70.0, f0_ceil=1000.0, frame_period=5.0)
+        else:                              # the pitch comes from the melody extraction: WORLD's own search is not run
+            self.tt = np.arange(int(len(self.x) / sr / 0.005) + 1) * 0.005; f0 = None
         if f0_track is not None:
             t, f, v = f0_track
             voiced = np.interp(self.tt, t, v.astype(float)) > 0.5
@@ -266,7 +273,10 @@ class Voice:
         if notes is not None:                                   # the refinement must not undo the repair
             bad = (f0 > 0) & ((self.f0 <= 0) | (np.abs(np.log2(np.maximum(self.f0, 1.0) / np.maximum(f0, 1.0))) > 0.12))
             self.f0 = np.where(bad, f0, self.f0)
-        self.sp = pw.cheaptrick(self.x, self.f0, self.tt, sr); self.ap = pw.d4c(self.x, self.f0, self.tt, sr)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(2) as pool:                     # timbre and breathiness are independent: both at once
+            sp = pool.submit(pw.cheaptrick, self.x, self.f0, self.tt, sr); ap = pool.submit(pw.d4c, self.x, self.f0, self.tt, sr)
+            self.sp, self.ap = sp.result(), ap.result()
         if notes is not None:
             # A separated vocal still carries reverb and traces of the band, and a belted high
             # note is rough; the analysis reads all of that as breath noise, and the re-sung

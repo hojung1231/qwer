@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 V2M = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "vocal2midi"))
 sys.path.insert(0, V2M)
 PER_BUNDLE = 4                       # lyric lines per bundle: must match the app
-VERSION = "5"                        # raise when results change, so the server's kept results are not reused
+VERSION = "6"                        # raise when results change, so the server's kept results are not reused
 
 
 # ------------------------------------------------------------------ lyrics kept in the file
@@ -261,7 +261,7 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
     clock, t_all = {}, time.time()
     progress(1, "박자 찾는 중")
     import bars
-    b = bars.find_bars(mp3)
+    b = bars.tempo(mp3)
     div = 3 if b["beat_subdivision"] == 3 else 4
     length = sf.info(_wav(mp3, work)).duration
 
@@ -325,6 +325,19 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
 
     side = threading.Thread(target=lyrics, daemon=True); side.start()
 
+    progress(80, "화음과 화음 목소리 만드는 중")
+    # The voice model (how the singer sounds, frame by frame) does not depend on the harmony notes,
+    # so it is built while the chords and the three lines are being worked out.
+    # It is made at 24 kHz: the result is a backing voice kept as a small mp3, which holds nothing
+    # above that anyway, and the analysis and the singing take well under half the time.
+    VSR = 24000; box = {}
+
+    def model():
+        t0 = time.time()
+        box["voice"] = H.Voice(librosa.resample(vocal, orig_sr=sr, target_sr=VSR), VSR, (z["t"], z["f0"], voiced), mel, rep.get("tuning_cents", 0.0))
+        clock["voice_model"] = round(time.time() - t0, 1)
+
+    vm = threading.Thread(target=model, daemon=True); vm.start()
     t0 = time.time()
     stereo = isolate.decode(mp3, sr); mix = stereo.mean(0)
     chords = H.estimate_chords(mix, vocal, sr, rep["midi_origin_s"], beat, tonic)
@@ -333,13 +346,12 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
     # where an arranger would actually bring the voice in: used only to recommend bundles
     arranged_rec = H.smart_line(mel, chords, tonic, beat)
     clock["harmony_lines"] = round(time.time() - t0, 1)
-
-    progress(82, "화음 목소리 만드는 중")
-    # The voice is re-sung at 24 kHz: the result is a backing voice kept as a small mp3, which holds
-    # nothing above that anyway, and the analysis and the singing take well under half the time.
-    t0 = time.time(); VSR = 24000
-    voice = H.Voice(librosa.resample(vocal, orig_sr=sr, target_sr=VSR), VSR, (z["t"], z["f0"], voiced), mel, rep.get("tuning_cents", 0.0))
-    progress(88, "화음 목소리 만드는 중")
+    vm.join()
+    if "voice" not in box:
+        raise RuntimeError("화음 목소리를 만들지 못했습니다")
+    voice = box["voice"]
+    progress(90, "화음 목소리 만드는 중")
+    t0 = time.time()
 
     def sing(item):
         key, pitches = item
