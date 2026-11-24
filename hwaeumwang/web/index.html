@@ -99,6 +99,16 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 #prSeek{width:100%;margin:10px 0 0;accent-color:var(--brand)}
 .times{display:flex;justify-content:space-between;color:var(--muted);font-size:.76rem;font-variant-numeric:tabular-nums}
 .brand-acts{display:flex;gap:14px;align-items:center}
+.text-btn.help{width:30px;height:30px;border-radius:50%;border:1.5px solid currentColor;font-weight:900;line-height:1;padding:0}
+.tour{position:fixed;inset:0;z-index:30}
+.tour .hole{position:fixed;border-radius:16px;box-shadow:0 0 0 200vmax rgba(0,0,0,.74);outline:2px solid var(--brand);outline-offset:2px;transition:left .22s,top .22s,width .22s,height .22s}
+.tour .tip{position:fixed;left:16px;right:16px;max-width:420px;margin:0 auto;background:var(--raise);border:1px solid var(--hair);border-radius:18px;padding:16px;box-shadow:0 18px 40px -12px rgba(0,0,0,.6)}
+.tour .tip p{margin:0 0 12px;font-size:.98rem;font-weight:600;line-height:1.5}
+.tour .row{display:flex;align-items:center;gap:10px}
+.tour .row span{flex:1;text-align:center;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.tour .row button{height:38px;padding:0 16px;border-radius:999px;font-weight:700;color:var(--muted)}
+.tour .row .main{background:var(--brand);color:var(--on-brand)}
+@media (prefers-reduced-motion:reduce){.tour .hole{transition:none}}
 .srv{border:1px solid var(--hair);border-radius:20px;background:var(--raise);color:var(--ink);padding:18px;width:min(340px,calc(100vw - 40px))}
 .srv::backdrop{background:rgba(0,0,0,.55)}
 .srv h2{margin:0 0 6px;font-size:1.1rem;font-weight:900}
@@ -219,7 +229,7 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5h18l1.2-10.2-5.5 4.3L12 4.5 7.3 11.6 1.8 7.3z" fill="var(--brand)"/><rect x="3" y="18.8" width="18" height="2.4" rx="1.2" fill="var(--brand)"/></svg>
       화음왕
     </div>
-    <span class="brand-acts"><button class="text-btn" id="srvBtn" type="button">서버</button>
+    <span class="brand-acts"><button class="text-btn help" id="helpBtn" type="button" aria-label="사용법 보기">?</button>
     <button class="text-btn" id="editBtn" type="button" aria-pressed="false" hidden>편집</button></span>
   </div>
 
@@ -312,6 +322,12 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 </dialog>
 
 <div class="lvmeter" id="lvMeter" hidden><i></i></div>
+<!-- First-run guide: one part of the screen is lit at a time, with a line on what it does. -->
+<div class="tour" id="tour" hidden role="dialog" aria-modal="true" aria-label="사용법 안내">
+  <div class="hole" id="tourHole"></div>
+  <div class="tip" id="tourTip"><p id="tourText"></p>
+    <div class="row"><button type="button" id="tourSkip">건너뛰기</button><span id="tourN"></span><button type="button" id="tourNext" class="main">다음</button></div></div>
+</div>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="화면 전환">
@@ -353,7 +369,9 @@ let exampleHidden=pref("ex")==="hidden";
 const BUILT=v=>/^__HWAEUM_/.test(v)?"":v, SRV_DEFAULT=BUILT("__HWAEUM_SERVER__"), KEY_DEFAULT=BUILT("__HWAEUM_KEY__");
 const srvUrl=()=>(pref("server")||SRV_DEFAULT).trim().replace(/\/+$/,""), srvKey=()=>pref("skey")||KEY_DEFAULT, srvHead=()=>srvKey()?{"x-hwaeum-key":srvKey()}:{};
 function srvOpen(){ $("srvUrl").value=pref("server")||""; $("srvUrl").placeholder=SRV_DEFAULT?"기본 서버 사용 중":"http://192.168.0.10:8787"; $("srvKey").value=pref("skey")||""; $("srvState").textContent=""; $("srvDlg").showModal() }
-$("srvBtn").onclick=srvOpen;
+// The server address is built into the app; the dialog stays for development, behind a long
+// press on the version line at the bottom of the first screen.
+{ let h=0; const v=$("ver"); v.onpointerdown=()=>{ h=setTimeout(srvOpen,700) }; v.onpointerup=v.onpointerleave=v.onpointercancel=()=>clearTimeout(h); v.oncontextmenu=e=>e.preventDefault() }
 $("srvDlg").onclick=e=>{ if(e.target===$("srvDlg")) $("srvDlg").close() };
 const srvRead=()=>{ let u=$("srvUrl").value.trim().replace(/\/+$/,""); if(u&&!/^https?:\/\//i.test(u)) u="http://"+u; return u };
 $("srvSave").onclick=()=>{ pref("server",srvRead()); pref("skey",$("srvKey").value.trim()); $("srvDlg").close(); toast(srvUrl()?"서버 주소를 저장했습니다":"서버 주소를 지웠습니다") };
@@ -523,6 +541,7 @@ function render(){
   const total=list.reduce((a,s)=>a+(s.dur||0),0), nDone=list.filter(s=>s.state==="done").length;
   $("count").textContent=list.length?`${list.length}곡 · ${Math.floor(total/60)}분 · 추출 ${nDone}곡`:"아직 넣은 곡이 없습니다";
   $("editBtn").hidden=!list.length;
+  if(screenNow==="library"&&!editing) setTimeout(()=>{ if(screenNow!=="library") return; tourStart("library"); if(songs.length) tourStart("song") },600);
 }
 function setEditing(v){ editing=v; $("editBtn").setAttribute("aria-pressed",v); $("editBtn").textContent=v?"완료":"편집" }
 
@@ -642,6 +661,7 @@ async function openEditor(s){
   $("edTitle").textContent=s.title;
   $("edNote").textContent=bs.length?"":"이 mp3 안에 가사가 없어서 묶음을 만들 수 없습니다.";
   show("edit"); renderStyle(); renderEditor(bs);
+  setTimeout(()=>{ if(screenNow==="edit") tourStart("edit") },600);
 }
 function renderEditor(bs){
   const s=current, cols=$("edCols"), rows=$("edRows"); cols.style.setProperty("--n",COLS.length); cols.textContent=""; rows.textContent="";
@@ -679,14 +699,54 @@ function renderEditor(bs){
 function closePlayer(){ stopPlay(); if(playUrl){ try{URL.revokeObjectURL(playUrl)}catch(e){} playUrl=null; player.removeAttribute("src") } harmUrl=null; harm.removeAttribute("src") }
 // The phone's back button: close what is open on top, else go to the screen before this one.
 let screenNow="library", navSkip=false; const navStack=[];
+// ---- the guide.  Each screen has its own, shown the first time the screen has something on it;
+// the "?" button shows the current screen's guide again.
+const TOURS={
+  library:[["#addBtn","여기를 눌러 폰에 있는 노래(mp3)를 넣습니다."],
+    [".song .ext","‘화음 추출’을 누르면 서버가 이 곡의 멜로디와 화음을 만듭니다. 한 곡에 1~3분쯤 걸려요."],
+    [".song .done","추출이 끝난 곡입니다. 곡을 누르면 ‘소절 편집’으로 넘어갑니다."],
+    [".tabs","아래 세 탭은 왼쪽부터 내 음악창고 · 소절 편집 · 연습입니다. 이 순서대로 진행하면 됩니다."],
+    ["#helpBtn","이 설명을 다시 보고 싶으면 언제든 물음표를 누르세요. 화면마다 그 화면의 설명이 나옵니다."]],
+  edit:[["#edStyle","곡 전체에 쓸 화음 방식을 고릅니다. 3도 위는 멜로디보다 높게, 3도 아래는 낮게 부르는 화음입니다."],
+    [".bundle","가사 네 줄이 한 묶음입니다. 묶음을 누르면 화음 ↔ 솔로로 옮겨집니다. ‘화음’ 쪽에 둔 묶음만 화음으로 연습합니다."],
+    [".bundle .play","원곡과 화음을 함께 미리 듣습니다. 꾹 누른 채 위아래로 밀면 화음 소리 크기가 바뀝니다."],
+    ['.tab[data-screen="practice"]',"다 골랐으면 이 연습 탭으로 갑니다."]],
+  song:[[".song .ext","‘화음 추출’을 누르면 서버가 이 곡의 멜로디와 화음을 만듭니다. 한 곡에 1~3분쯤 걸려요."],
+    [".song","추출이 끝나면 곡을 눌러 ‘소절 편집’으로 넘어갑니다."]],
+  practice:[[".lane","악보입니다. 회색 줄은 원곡 멜로디, 금색 줄은 내가 부를 화음이고, 내 목소리가 그 위에 점으로 찍힙니다."],
+    ["#prNowSlot","지금 부를 묶음의 가사입니다. 좌우로 밀면 앞뒤 묶음으로 이동합니다. 자물쇠를 누르면 그 묶음의 녹음이 지워지지 않게 잠깁니다."],
+    ["#prPlay","녹음 시작과 정지입니다. 이어폰을 꼭 끼고 불러 주세요."],
+    ["#tRec","지금 묶음을 처음부터 다시 녹음합니다."],
+    ["#tMix","내 녹음을 원곡과 함께 들어봅니다. 꾹 누른 채 위아래로 밀면 내 목소리 크기가 바뀝니다."],
+    ["#tVox","화음을 가수 목소리로 들려주는 안내음입니다. 눌러서 켜고 끄고, 꾹 누른 채 밀면 크기를 조절합니다."],
+    ["#tMel","화음을 건반 소리로 들려주는 안내음입니다. 쓰는 법은 왼쪽 버튼과 같습니다."],
+    ["#setBtn","원곡 소리 크기는 여기서 조절합니다."]]};
+let tour=null;
+function tourStart(name,force){
+  if(tour||!TOURS[name]||(!force&&pref("tour_"+name))) return;
+  const vis=el=>!!el&&el.getClientRects().length>0&&!el.closest("[hidden]");
+  const steps=TOURS[name].map(([sel,text])=>({el:[...document.querySelectorAll(sel)].find(vis),text})).filter(x=>x.el);
+  if(steps.length<2) return;                           // nothing on this screen yet: wait for a visit that has
+  tour={name,steps,i:0}; $("tour").hidden=false; if(name==="practice") prPlaceCards(); tourShow() }
+function tourShow(){ const x=tour.steps[tour.i]; try{ x.el.scrollIntoView({block:"center"}) }catch(e){}
+  $("tourText").textContent=x.text; $("tourN").textContent=`${tour.i+1} / ${tour.steps.length}`; $("tourNext").textContent=tour.i+1<tour.steps.length?"다음":"시작하기";
+  requestAnimationFrame(()=>{ if(!tour) return; const r=x.el.getBoundingClientRect(), p=6, h=$("tourHole"), tip=$("tourTip"), H=innerHeight;
+    h.style.left=(r.left-p)+"px"; h.style.top=(r.top-p)+"px"; h.style.width=(r.width+2*p)+"px"; h.style.height=(r.height+2*p)+"px";
+    if(r.top+r.height/2<H/2){ tip.style.top=Math.min(H-tip.offsetHeight-12,r.bottom+18)+"px"; tip.style.bottom="" } else { tip.style.bottom=Math.min(H-tip.offsetHeight-12,H-r.top+18)+"px"; tip.style.top="" } }) }
+function tourNext(){ if(!tour) return; if(++tour.i>=tour.steps.length) tourEnd(); else tourShow() }
+function tourEnd(){ if(!tour) return; if(tour.name==="practice") setTimeout(()=>{ document.querySelector("main").scrollTo(0,0); prPlaceCards() },0); pref("tour_"+tour.name,"1"); if(tour.name==="library"&&tour.steps.some(x=>x.el.classList.contains("ext"))) pref("tour_song","1"); tour=null; $("tour").hidden=true }
+$("tourNext").onclick=tourNext; $("tourHole").onclick=tourNext; $("tourSkip").onclick=tourEnd;
+$("helpBtn").onclick=()=>tourStart(screenNow,true);
+addEventListener("resize",()=>{ if(tour) tourShow() });
 window.__back=()=>{
+  if(tour){ tourEnd(); return true }
   if($("srvDlg").open){ $("srvDlg").close(); return true }
   if($("prSet").classList.contains("open")){ setOpen(false); return true }
   if(editing){ setEditing(false); render(); return true }
-  if(!navStack.length) return false;
-  const prev=navStack.pop(); navSkip=true;
-  if(prev==="edit") openEditTab(); else if(prev==="practice") openPractice(); else show(prev);
-  return true };
+  // tabs go back in a fixed order: practice -> bundle editing -> library -> leave the app
+  if(screenNow==="practice"){ openEditTab(); return true }
+  if(screenNow==="edit"||screenNow==="soon"){ show("library"); return true }
+  return false };
 function show(name){
   if(name!==screenNow){ if(!navSkip){ navStack.push(screenNow); if(navStack.length>20) navStack.shift() } screenNow=name } navSkip=false;
   if(name!=="edit") stopPlay();
@@ -977,7 +1037,7 @@ function prPlaceCards(){
   if(t>=pr.bundles[pr.cards[k].i].t[1]&&k+1<pr.cards.length) k++;
   let cur=pr.curCard=pr.cards[k];
   // the slot keeps its height while it is empty: the page must not shrink under the finger
-  if(document.querySelector("main").scrollTop>24) cur=null; else slot.style.minHeight="";
+  if(document.querySelector("main").scrollTop>24&&!tour) cur=null; else slot.style.minHeight="";      // the guide points at the card: it stays put
   if(!cur&&slot.firstChild) slot.style.minHeight=slot.offsetHeight+"px";
   for(const c of pr.cards){ const want=c===cur?slot:box; if(c.card.parentNode===want) continue;
     c.card.style.transform=""; c.card.classList.remove("inR","inL");
@@ -1050,6 +1110,7 @@ async function openPractice(){
   const last=pr.notes[pr.notes.length-1]; $("prSeek").max=Math.ceil(last.t+last.d+2); $("prEnd").textContent=mmss(+$("prSeek").max);
   $("prNote").textContent="이어폰을 꼭 쓰세요. 스피커로 틀면 마이크가 원곡 소리를 주워 판정이 흐려집니다.";
   prLyricTimes(); prRenderCards(); prLyricShow(); guideButtons(); origApply(); prUpdateStats(); prDraw();
+  setTimeout(()=>{ if(screenNow==="practice") tourStart("practice") },600);
 }
 const prTime=()=>pr.on?pr.tA+(performance.now()-pr.tP)/1000:pr.audio.currentTime||0;
 pr.audio.ontimeupdate=()=>{ pr.tA=pr.audio.currentTime; pr.tP=performance.now(); if(pr.listen&&pr.audio.currentTime>=pr.listen.end) prListenStop() };
