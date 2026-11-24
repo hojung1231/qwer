@@ -646,9 +646,13 @@ const player=new Audio(), harm=new Audio(); let playing=-1, playUrl=null, harmUr
 harm.preload="auto";
 // The sung harmony through its own gain, so it can be set louder than the file's level (the same
 // hold-and-slide as in practice).  Without an audio context the plain element volume is used.
-let edNode=null;
+// The song goes the same way.  A sound sent through the audio context comes out later than one
+// played by the element itself (on a phone by a tenth of a second and more), so with only the
+// harmony routed, the harmony trailed the song.
+let edNode=null, edSong=null;
 function edRoute(){ if(edNode) return; try{ pr.ctx=pr.ctx||new (window.AudioContext||window.webkitAudioContext)(); if(pr.ctx.state==="suspended") pr.ctx.resume();
-    const g=pr.ctx.createGain(); pr.ctx.createMediaElementSource(harm).connect(g); g.connect(pr.ctx.destination); edNode=g; harm.volume=1 }catch(e){} edApply() }
+    const g=pr.ctx.createGain(); pr.ctx.createMediaElementSource(harm).connect(g); g.connect(pr.ctx.destination); edNode=g; harm.volume=1;
+    edSong=pr.ctx.createGain(); pr.ctx.createMediaElementSource(player).connect(edSong); edSong.connect(pr.ctx.destination) }catch(e){} edApply() }
 function edApply(){ const v=3*gLv.ed*gLv.ed; if(edNode) edNode.gain.value=v; else harm.volume=Math.min(1,v) }
 // Two players are kept in step by playing the harmony a touch faster or slower.  Jumping it to
 // the song's position (as before) cost the time the jump itself takes, so after the first play
@@ -681,7 +685,7 @@ async function playBundle(s,b,i,btn){
   // its place when "play" is called starts late
   const at=a=>new Promise(res=>{ let done=false; const ok=()=>{ if(!done){ done=true; res() } };
     a.addEventListener("seeked",ok,{once:true}); setTimeout(ok,1500); try{ a.currentTime=b.t[0] }catch(e){ ok() } });
-  harm.playbackRate=1; if(withHarm) edRoute();
+  harm.playbackRate=1; edRoute(); if(pr.ctx&&pr.ctx.state==="suspended"){ try{ await pr.ctx.resume() }catch(e){} }
   await Promise.all([at(player),withHarm?at(harm):null]);
   if(playing!==i) return;
   player.play().catch(()=>{ stopPlay(); toast("재생을 시작하지 못했습니다") });
