@@ -108,6 +108,11 @@ class Handler(BaseHTTPRequestHandler):
         name = urllib.parse.parse_qs(u.query).get("name", [""])[0].strip()
         with LOCK:
             job = JOBS.get(jid)
+            force = urllib.parse.parse_qs(u.query).get("force", ["0"])[0] == "1"
+            if force and job is not None and job["state"] == "done":
+                job = None                              # work it out again even though a result is kept
+            if force and os.path.exists(os.path.join(DATA, jid + ".json")) and (job is None):
+                os.remove(os.path.join(DATA, jid + ".json"))
             if job is None or job["state"] == "error":
                 mp3 = os.path.join(DATA, jid + ".mp3"); pack = os.path.join(DATA, jid + ".json")
                 with open(mp3, "wb") as f:

@@ -110,14 +110,14 @@ def web():
         return {"ok": True, "device": "Modal T4", "key": bool(KEY)}
 
     @api.post("/extract")
-    async def start(req: Request, name: str = ""):
+    async def start(req: Request, name: str = "", force: int = 0):
         if denied(req):
             return JSONResponse({"error": "key"}, 401)
         body = await req.body()
         if not 0 < len(body) <= MAX_BYTES:
             return JSONResponse({"error": "size"}, 413)
         jid = hashlib.sha1(body + pipeline.VERSION.encode()).hexdigest()[:16]
-        if have(jid):
+        if have(jid) and not force:                     # force: work it out again even though a result is kept
             return {"id": jid, "state": "done"}
         j = jobs.get(jid)
         if j and j["state"] in ("queued", "running") and time.time() - j.get("ts", 0) < STALE_S:
@@ -143,6 +143,7 @@ def web():
             return JSONResponse({"error": "key"}, 401)
         if not jid.isalnum() or not have(jid):
             return JSONResponse({"error": "not found"}, 404)
+        vol.reload()                                    # a result worked out again replaces the file this container has seen
         return FileResponse(f"/data/{jid}.json", media_type="application/json; charset=utf-8")
 
     return api

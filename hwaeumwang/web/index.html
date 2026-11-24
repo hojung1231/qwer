@@ -99,6 +99,10 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 #prSeek{width:100%;margin:10px 0 0;accent-color:var(--brand)}
 .times{display:flex;justify-content:space-between;color:var(--muted);font-size:.76rem;font-variant-numeric:tabular-nums}
 .brand-acts{display:flex;gap:14px;align-items:center}
+.text-btn.adm{font-size:.72rem;padding:3px 9px;border-radius:999px;background:var(--danger);color:#fff}
+.srv .chk{display:flex;gap:8px;align-items:flex-start;margin:12px 0 0;font-size:.8rem;color:var(--ink);font-weight:600}
+.srv .chk input{width:18px;height:18px;flex:none;margin:1px 0 0;accent-color:var(--brand)}
+#wordmark,#addBtn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .text-btn.help{width:30px;height:30px;padding:0;display:flex;align-items:center;justify-content:center}
 .text-btn.help svg{width:28px;height:28px;display:block}
 .tour{position:fixed;inset:0;z-index:30}
@@ -226,11 +230,11 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
 
 <main class="gutter" id="main">
   <div class="brand">
-    <div class="wordmark">
+    <div class="wordmark" id="wordmark">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.5h18l1.2-10.2-5.5 4.3L12 4.5 7.3 11.6 1.8 7.3z" fill="var(--brand)"/><rect x="3" y="18.8" width="18" height="2.4" rx="1.2" fill="var(--brand)"/></svg>
       화음왕
     </div>
-    <span class="brand-acts"><button class="text-btn help" id="helpBtn" type="button" aria-label="사용법 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.6a2.8 2.8 0 1 1 4.5 2.2c-.9.7-1.8 1.2-1.8 2.4"/><circle cx="12" cy="17.2" r=".6" fill="currentColor"/></svg></button>
+    <span class="brand-acts"><button class="text-btn adm" id="admBtn" type="button" hidden>관리자</button><button class="text-btn help" id="helpBtn" type="button" aria-label="사용법 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.6a2.8 2.8 0 1 1 4.5 2.2c-.9.7-1.8 1.2-1.8 2.4"/><circle cx="12" cy="17.2" r=".6" fill="currentColor"/></svg></button>
     <button class="text-btn" id="editBtn" type="button" aria-pressed="false" hidden>편집</button></span>
   </div>
 
@@ -318,10 +322,17 @@ h1{font-size:2.15rem;font-weight:900;letter-spacing:-.045em;line-height:1.1;marg
   <p>화음 추출을 해 줄 컴퓨터의 주소입니다. 그 컴퓨터에서 서버를 켜면 창에 주소가 나옵니다.</p>
   <label for="srvUrl">주소</label><input id="srvUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://192.168.0.10:8787">
   <label for="srvKey">비밀단어 (서버에 정했을 때만)</label><input id="srvKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <label class="chk"><input type="checkbox" id="srvForce"> 보관된 결과를 무시하고 매번 새로 계산 (속도 시험용, 매번 비용이 듭니다)</label>
   <p class="state" id="srvState" role="status"></p>
   <div class="row"><button type="button" id="srvTest">연결 확인</button><button type="button" id="srvSave" class="main">저장</button></div>
 </dialog>
 
+<dialog class="srv" id="admDlg" aria-labelledby="admTitle">
+  <h2 id="admTitle">관리자 모드</h2>
+  <label for="admPw">비밀번호</label><input id="admPw" type="password" inputmode="numeric" autocomplete="off" maxlength="12">
+  <p class="state" id="admState" role="status"></p>
+  <div class="row"><button type="button" id="admNo">취소</button><button type="button" id="admOk" class="main">확인</button></div>
+</dialog>
 <div class="lvmeter" id="lvMeter" hidden><i></i></div>
 <!-- First-run guide: one part of the screen is lit at a time, with a line on what it does. -->
 <div class="tour" id="tour" hidden role="dialog" aria-modal="true" aria-label="사용법 안내">
@@ -369,13 +380,29 @@ let exampleHidden=pref("ex")==="hidden";
 // what is typed in the server dialog takes their place.
 const BUILT=v=>/^__HWAEUM_/.test(v)?"":v, SRV_DEFAULT=BUILT("__HWAEUM_SERVER__"), KEY_DEFAULT=BUILT("__HWAEUM_KEY__");
 const srvUrl=()=>(pref("server")||SRV_DEFAULT).trim().replace(/\/+$/,""), srvKey=()=>pref("skey")||KEY_DEFAULT, srvHead=()=>srvKey()?{"x-hwaeum-key":srvKey()}:{};
-function srvOpen(){ $("srvUrl").value=pref("server")||""; $("srvUrl").placeholder=SRV_DEFAULT?"기본 서버 사용 중":"http://192.168.0.10:8787"; $("srvKey").value=pref("skey")||""; $("srvState").textContent=""; $("srvDlg").showModal() }
+function srvOpen(){ $("srvUrl").value=pref("server")||""; $("srvUrl").placeholder=SRV_DEFAULT?"기본 서버 사용 중":"http://192.168.0.10:8787"; $("srvKey").value=pref("skey")||""; $("srvForce").checked=pref("force")==="1"; $("srvState").textContent=""; $("srvDlg").showModal() }
 // The server address is built into the app; the dialog stays for development, behind a long
 // press on the version line at the bottom of the first screen.
-{ let h=0; const v=$("ver"); v.onpointerdown=()=>{ h=setTimeout(srvOpen,700) }; v.onpointerup=v.onpointerleave=v.onpointercancel=()=>clearTimeout(h); v.oncontextmenu=e=>e.preventDefault() }
+// ---- administrator mode: hold the 화음왕 mark and the add button together for three seconds, then
+// the password.  The same hold leaves it.  It opens the server dialog and the "compute again" switch.
+const ADMIN_PW="8516", HOLD_ADMIN_MS=3000;
+const isAdmin=()=>pref("admin")==="1";
+function adminPaint(){ $("admBtn").hidden=!isAdmin() }
+{ const held={mark:false,add:false}; let timer=0, swallow=false;
+  const check=()=>{ clearTimeout(timer); if(held.mark&&held.add) timer=setTimeout(()=>{ swallow=true;
+      if(isAdmin()){ pref("admin","0"); pref("force","0"); adminPaint(); toast("관리자 모드에서 나왔습니다") }
+      else{ $("admPw").value=""; $("admState").textContent=""; $("admDlg").showModal(); setTimeout(()=>$("admPw").focus(),50) } },HOLD_ADMIN_MS) };
+  for(const [el,k] of [[$("wordmark"),"mark"],[$("addBtn"),"add"]]){
+    el.addEventListener("pointerdown",()=>{ held[k]=true; if(k==="add") swallow=false; check() });
+    for(const ev of ["pointerup","pointercancel","pointerleave"]) el.addEventListener(ev,()=>{ held[k]=false; clearTimeout(timer) });
+    el.addEventListener("contextmenu",e=>e.preventDefault()) }
+  $("picker").addEventListener("click",e=>{ if(swallow){ swallow=false; e.preventDefault() } });      // letting go after the hold must not open the file picker
+  const ok=()=>{ if($("admPw").value===ADMIN_PW){ pref("admin","1"); $("admDlg").close(); adminPaint(); toast("관리자 모드입니다") } else { $("admState").textContent="비밀번호가 틀렸습니다"; $("admPw").value="" } };
+  $("admOk").onclick=ok; $("admNo").onclick=()=>$("admDlg").close(); $("admPw").onkeydown=e=>{ if(e.key==="Enter") ok() };
+  $("admBtn").onclick=()=>srvOpen(); adminPaint() }
 $("srvDlg").onclick=e=>{ if(e.target===$("srvDlg")) $("srvDlg").close() };
 const srvRead=()=>{ let u=$("srvUrl").value.trim().replace(/\/+$/,""); if(u&&!/^https?:\/\//i.test(u)) u="http://"+u; return u };
-$("srvSave").onclick=()=>{ pref("server",srvRead()); pref("skey",$("srvKey").value.trim()); $("srvDlg").close(); toast(srvUrl()?"서버 주소를 저장했습니다":"서버 주소를 지웠습니다") };
+$("srvSave").onclick=()=>{ pref("server",srvRead()); pref("skey",$("srvKey").value.trim()); pref("force",$("srvForce").checked?"1":"0"); $("srvDlg").close(); toast(srvUrl()?"서버 주소를 저장했습니다":"서버 주소를 지웠습니다") };
 $("srvTest").onclick=async()=>{ const u=srvRead()||SRV_DEFAULT, st=$("srvState"); if(!u){ st.textContent="주소를 넣어 주세요"; return } st.textContent="확인 중…";
   try{ const r=await fetch(u+"/health",{signal:AbortSignal.timeout(6000)}), j=await r.json(); st.textContent=j.ok?`연결됨 · 계산 장치: ${j.device}`:"서버가 아닌 것 같습니다" }
   catch(e){ st.textContent="연결하지 못했습니다. 같은 와이파이인지, 서버가 켜져 있는지 확인해 주세요." } };
@@ -392,7 +419,8 @@ async function extractRemote(s){
   const u=srvUrl(), wait=ms=>new Promise(r=>setTimeout(r,ms));
   try{
     if(!s.jobId){
-      const r=await fetch(u+"/extract?name="+encodeURIComponent(norm(s.title)),{method:"POST",headers:{...srvHead(),"content-type":"audio/mpeg"},body:s.blob});
+      const force=isAdmin()&&pref("force")==="1"?"&force=1":"";
+      const r=await fetch(u+"/extract?name="+encodeURIComponent(norm(s.title))+force,{method:"POST",headers:{...srvHead(),"content-type":"audio/mpeg"},body:s.blob});
       if(r.status===401) throw new Error("비밀단어가 맞지 않습니다"); if(!r.ok) throw new Error("서버가 파일을 받지 않았습니다 ("+r.status+")");
       s.jobId=(await r.json()).id; dbPut(s) }
     const id=s.jobId; let miss=0;
@@ -408,7 +436,7 @@ async function extractRemote(s){
 }
 function extract(s,li){
   if(s.state) return;
-  if(!s.example&&!hasData(s)){ if(srvUrl()&&s.blob) extractRemote(s); else{ toast("추출 서버 주소를 먼저 넣어 주세요"); srvOpen() } return }
+  if(!s.example&&!hasData(s)){ if(srvUrl()&&s.blob) extractRemote(s); else{ toast("서버에 연결할 수 없습니다"); if(isAdmin()) srvOpen() } return }
   s.state="busy";
   const total=Math.max(8,Math.min(20,(s.dur||200)*0.05))*1000, t0=performance.now();
   const meta=li.querySelector(".meta"), btn=li.querySelector(".ext");
