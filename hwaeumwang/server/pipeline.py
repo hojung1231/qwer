@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 V2M = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "vocal2midi"))
 sys.path.insert(0, V2M)
 PER_BUNDLE = 4                       # lyric lines per bundle: must match the app
-VERSION = "4"                        # raise when results change, so the server's kept results are not reused
+VERSION = "5"                        # raise when results change, so the server's kept results are not reused
 
 
 # ------------------------------------------------------------------ lyrics kept in the file
@@ -329,7 +329,9 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
     stereo = isolate.decode(mp3, sr); mix = stereo.mean(0)
     chords = H.estimate_chords(mix, vocal, sr, rep["midi_origin_s"], beat, tonic)
     lines = {"up": H.harmony_line(mel, chords, tonic, beat, +1), "down": H.harmony_line(mel, chords, tonic, beat, -1),
-             "arranged": H.smart_line(mel, chords, tonic, beat)}
+             "arranged": H.smart_line(mel, chords, tonic, beat, everywhere=True)}
+    # where an arranger would actually bring the voice in: used only to recommend bundles
+    arranged_rec = H.smart_line(mel, chords, tonic, beat)
     clock["harmony_lines"] = round(time.time() - t0, 1)
 
     progress(82, "화음 목소리 만드는 중")
@@ -361,7 +363,7 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
         for i in range(0, len(lyr), PER_BUNDLE):
             part = span[i:i + PER_BUNDLE]
             bundle_times.append([round(max(0.0, part[0][0] - 0.4), 1), round(part[-1][1] + 0.4, 1)])
-        arr = lines["arranged"]
+        arr = arranged_rec
         for a, e in bundle_times:
             inside = [arr[k] > 0 for k, n in enumerate(notes) if a <= n[0] < e]
             cover.append(1 if inside and sum(inside) >= 0.3 * len(inside) else 0)
@@ -370,7 +372,7 @@ def build(mp3, work, progress=lambda p, msg="": None, name=None):
                      "sig": "12/8" if div == 3 else "4/4"},
             "mel": [[round(t, 3), round(d, 3), m] for t, d, m in notes],
             "up": [int(x) for x in lines["up"]], "down": [int(x) for x in lines["down"]], "arranged": [int(x) for x in lines["arranged"]],
-            "bundleTimes": bundle_times, "lineTimes": line_times, "arrangedCover": cover, "harm": harm,
+            "bundleTimes": bundle_times, "lineTimes": line_times, "arrangedCover": cover, "arrangedFull": True, "harm": harm,
             "made": {"device": rep.get("timings", {}).get("device", "?"), "separator": rep.get("separator", "?"), "lyrics": len(lyr), "lines": how,
                      "seconds": dict(clock, total=round(time.time() - t_all, 1), **{k: v for k, v in rep.get("timings", {}).items() if k.endswith("_s")})}}
     progress(100, "완료")

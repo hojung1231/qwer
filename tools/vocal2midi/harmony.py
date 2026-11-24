@@ -155,13 +155,17 @@ def phrases(mel, beat):
     return np.split(np.arange(len(mel)), gaps)
 
 
-def smart_line(mel, chords, tonic, beat):
+def smart_line(mel, chords, tonic, beat, everywhere=False):
     """One harmony voice chosen note by note with dynamic programming.
 
     Every scale (or chord) tone a 3rd to a 6th away from the lead, above or below, is a
     candidate.  A path through the candidates is scored on how each note sounds against the
     lead and the chord, and on how the voice moves from note to note; Viterbi finds the best.
-    Returns the harmony pitch per melody note, 0 where the voice rests."""
+    Returns the harmony pitch per melody note, 0 where the voice rests.
+
+    By default the voice sings only where an arranger would bring it in (it stays out of the
+    verses and joins building phrases half-way).  `everywhere=True` writes it for every note,
+    so the singer can choose to use it in any part of the song."""
     p = mel[:, 2].astype(int); t = mel[:, 0]; d = mel[:, 1]
     scale = {(tonic + x) % 12 for x in MAJOR}
     # comfortable register for the same singer: roughly the lead's own range
@@ -171,7 +175,7 @@ def smart_line(mel, chords, tonic, beat):
     out = np.zeros(len(mel), int)
     prev_side = 0
     for idx in phrases(mel, beat):
-        if sec[idx[0]] == 0:
+        if sec[idx[0]] == 0 and not everywhere:
             prev_side = 0
             continue                                                 # verse: lead alone
         cands, costs = [], []
@@ -226,7 +230,7 @@ def smart_line(mel, chords, tonic, beat):
         path = path[::-1]
         line = np.array([cands[n][j][0] for n, j in enumerate(path)])
         prev_side = cands[-1][path[-1]][1]
-        if sec[idx[0]] == 1:
+        if sec[idx[0]] == 1 and not everywhere:
             # building sections: the voice only joins for the back half of the phrase
             mid = 0.5 * (t[idx[0]] + t[idx[-1]] + d[idx[-1]])
             line = np.where(t[idx] >= mid - 1e-6, line, 0)
