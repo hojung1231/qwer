@@ -19,6 +19,9 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 app = modal.App("hwaeumwang")
 vol = modal.Volume.from_name("hwaeumwang-data", create_if_missing=True)
 jobs = modal.Dict.from_name("hwaeumwang-jobs", create_if_missing=True)
+# one entry per installed app, under a random number the app made up for itself (no name, no device
+# details): first and last time it was opened, how often, its version, the songs it sent
+users = modal.Dict.from_name("hwaeumwang-users", create_if_missing=True)
 key = modal.Secret.from_dict({"HWAEUM_KEY": os.environ.get("HWAEUM_KEY", "")})
 SRC = dict(ignore=["data", "__pycache__", "*.ipynb", "*.pyc", "scores", "tuning"])
 
@@ -105,18 +108,56 @@ def web():
         vol.reload()
         return os.path.exists(f"/data/{jid}.json")
 
+    def seen(uid, version="", song=None):
+        uid = "".join(c for c in uid if c.isalnum())[:32]
+        if len(uid) < 8:
+            return
+        now = time.time(); u = users.get(uid) or {"first": now, "opens": 0, "songs": []}
+        u["last"] = now
+        if version:
+            u["v"] = version[:20]
+        if song is None:
+            u["opens"] = u.get("opens", 0) + 1
+        elif song not in u["songs"]:
+            u["songs"] = (u["songs"] + [song])[-500:]
+        users[uid] = u
+
+    @api.post("/hello")
+    def hello(req: Request, id: str = "", v: str = ""):
+        if denied(req):
+            return JSONResponse({"error": "key"}, 401)
+        seen(id, v)
+        return {"ok": True}
+
+    @api.get("/stats")
+    def stats(req: Request):
+        if denied(req):
+            return JSONResponse({"error": "key"}, 401)
+        now = time.time(); all_users = [u for _, u in users.items()]
+        versions = {}
+        for u in all_users:
+            versions[u.get("v", "?")] = versions.get(u.get("v", "?"), 0) + 1
+        return {"users": len(all_users),
+                "week": sum(now - u.get("last", 0) < 7 * 86400 for u in all_users),
+                "today": sum(now - u.get("last", 0) < 86400 for u in all_users),
+                "songs": sum(len(u.get("songs", [])) for u in all_users),
+                "with_songs": sum(1 for u in all_users if u.get("songs")),
+                "versions": versions}
+
     @api.get("/health")
     def health():
         return {"ok": True, "device": "Modal T4", "key": bool(KEY)}
 
     @api.post("/extract")
-    async def start(req: Request, name: str = "", force: int = 0):
+    async def start(req: Request, name: str = "", force: int = 0, uid: str = ""):
         if denied(req):
             return JSONResponse({"error": "key"}, 401)
         body = await req.body()
         if not 0 < len(body) <= MAX_BYTES:
             return JSONResponse({"error": "size"}, 413)
         jid = hashlib.sha1(body + pipeline.VERSION.encode()).hexdigest()[:16]
+        if uid:
+            seen(uid, song=hashlib.sha1(body).hexdigest()[:12])
         if have(jid) and not force:                     # force: work it out again even though a result is kept
             return {"id": jid, "state": "done"}
         j = jobs.get(jid)
