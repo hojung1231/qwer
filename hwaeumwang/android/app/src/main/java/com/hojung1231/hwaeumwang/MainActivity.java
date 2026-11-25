@@ -130,6 +130,10 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String version() { return BuildConfig.VERSION_NAME; }
 
+        /** Phone model and Android version, for the beta's usage records (sound delay differs by phone). */
+        @JavascriptInterface
+        public String device() { return android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + " / Android " + android.os.Build.VERSION.RELEASE; }
+
         /** Opens Android's share sheet (messengers, mail, copy) with the given text. */
         @JavascriptInterface
         public void share(final String text) {
