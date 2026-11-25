@@ -129,6 +129,12 @@ def web():
         seen(id, v)
         return {"ok": True}
 
+    @api.delete("/hello")
+    def forget(req: Request, id: str = ""):            # take an install out of the count (a test device)
+        if denied(req):
+            return JSONResponse({"error": "key"}, 401)
+        return {"removed": users.pop(id, None) is not None}
+
     @api.get("/stats")
     def stats(req: Request):
         if denied(req):
